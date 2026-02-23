@@ -10,6 +10,9 @@ from bot.middleware.auth import authorized_only
 HELP_TEXT = (
     "🤖 <b>DigitalOcean Droplet Manager</b>\n\n"
     "Berikut daftar perintah yang tersedia:\n\n"
+    "🔑 /setkey — Set API key DigitalOcean kamu\n"
+    "🗝️ /mykey — Cek API key yang tersimpan\n"
+    "🗑️ /deletekey — Hapus API key tersimpan\n\n"
     "📋 /list — Daftar semua droplet\n"
     "🔍 /info — Detail droplet tertentu\n"
     "🚀 /create — Buat droplet baru\n"

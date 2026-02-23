@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import Application, ContextTypes
 
 from bot.config import settings
-from bot.handlers import start, list as list_handler, info, power, create, destroy, upgrade
+from bot.handlers import start, list as list_handler, info, power, create, destroy, upgrade, setkey
 from bot.utils.logger import setup_logger
 
 logger = setup_logger("main")
@@ -38,7 +38,7 @@ def main() -> None:
     app = Application.builder().token(settings.TG_BOT_TOKEN).build()
 
     # Register handlers — order matters for ConversationHandlers
-    for module in (start, list_handler, info, power, create, destroy, upgrade):
+    for module in (start, list_handler, info, power, create, destroy, upgrade, setkey):
         for handler in module.get_handlers():
             app.add_handler(handler)
 

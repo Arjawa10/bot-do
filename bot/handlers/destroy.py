@@ -12,7 +12,7 @@ from telegram.ext import (
 
 from bot.middleware.auth import authorized_only
 from bot.services.digitalocean import DigitalOceanClient, DigitalOceanError
-from bot.config import settings
+from bot.storage.api_keys import get_token
 from bot.utils.formatters import format_droplet_short
 from bot.utils.logger import setup_logger
 
@@ -26,7 +26,15 @@ async def destroy_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """Step 1: Show list of droplets to destroy."""
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id)
+    if not token:
+        await update.effective_message.reply_text(  # type: ignore[union-attr]
+            "⚠️ API key DigitalOcean belum diset.\nGunakan /setkey untuk menyimpan API key kamu.",
+            parse_mode="HTML",
+        )
+        return ConversationHandler.END
+    client = DigitalOceanClient(token)
     try:
         droplets = await client.list_droplets()
     except DigitalOceanError as exc:
@@ -70,7 +78,9 @@ async def droplet_selected(
     context.user_data["destroy_droplet_id"] = droplet_id  # type: ignore[index]
 
     # Fetch name for display
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         droplet = await client.get_droplet(droplet_id)
         name = droplet.get("name", str(droplet_id))
@@ -119,7 +129,9 @@ async def confirm_destroy(
         f"⏳ Menghapus droplet <code>{droplet_id}</code>...", parse_mode="HTML"
     )
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         await client.destroy_droplet(droplet_id)
         logger.info("Destroyed droplet id=%s", droplet_id)

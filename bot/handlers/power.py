@@ -12,7 +12,7 @@ from telegram.ext import (
 
 from bot.middleware.auth import authorized_only
 from bot.services.digitalocean import DigitalOceanClient, DigitalOceanError
-from bot.config import settings
+from bot.storage.api_keys import get_token
 from bot.utils.formatters import format_droplet_short
 from bot.utils.logger import setup_logger
 
@@ -33,7 +33,15 @@ async def _start_power(
     """Common entry point for all power commands."""
     context.user_data["power_action"] = action_type  # type: ignore[index]
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id)
+    if not token:
+        await update.effective_message.reply_text(  # type: ignore[union-attr]
+            "⚠️ API key DigitalOcean belum diset.\nGunakan /setkey untuk menyimpan API key kamu.",
+            parse_mode="HTML",
+        )
+        return ConversationHandler.END
+    client = DigitalOceanClient(token)
     try:
         droplets = await client.list_droplets()
     except DigitalOceanError as exc:
@@ -133,7 +141,9 @@ async def confirm_action(
         f"⏳ Menjalankan {meta['label']}...", parse_mode="HTML"
     )
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         action_map = {
             "power_on": client.power_on_droplet,

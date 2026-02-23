@@ -7,7 +7,7 @@ from telegram.ext import CommandHandler, ContextTypes
 
 from bot.middleware.auth import authorized_only
 from bot.services.digitalocean import DigitalOceanClient, DigitalOceanError
-from bot.config import settings
+from bot.storage.api_keys import get_token
 from bot.utils.formatters import format_droplet_list
 from bot.utils.logger import setup_logger
 
@@ -19,11 +19,19 @@ async def list_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Handle /list command."""
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id)
+    if not token:
+        await update.effective_message.reply_text(  # type: ignore[union-attr]
+            "⚠️ API key DigitalOcean belum diset.\nGunakan /setkey untuk menyimpan API key kamu.",
+            parse_mode="HTML",
+        )
+        return
     msg = await update.effective_message.reply_text(  # type: ignore[union-attr]
         "⏳ Mengambil daftar droplet...", parse_mode="HTML"
     )
     try:
-        client = DigitalOceanClient(settings.DO_API_TOKEN)
+        client = DigitalOceanClient(token)
         try:
             droplets = await client.list_droplets()
         finally:

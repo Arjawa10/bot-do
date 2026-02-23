@@ -14,7 +14,7 @@ from telegram.ext import (
 
 from bot.middleware.auth import authorized_only
 from bot.services.digitalocean import DigitalOceanClient, DigitalOceanError
-from bot.config import settings
+from bot.storage.api_keys import get_token
 from bot.utils.formatters import format_droplet_created
 from bot.utils.logger import setup_logger
 
@@ -48,7 +48,9 @@ async def name_received(
         "⏳ Mengambil daftar region...", parse_mode="HTML"
     )
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         regions = await client.list_regions()
     except DigitalOceanError as exc:
@@ -99,7 +101,9 @@ async def region_selected(
         "⏳ Mengambil daftar size...", parse_mode="HTML"
     )
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         sizes = await client.list_sizes()
     except DigitalOceanError as exc:
@@ -155,7 +159,9 @@ async def size_selected(
         "⏳ Mengambil daftar image/OS...", parse_mode="HTML"
     )
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         images = await client.list_images("distribution")
     except DigitalOceanError as exc:
@@ -216,7 +222,9 @@ async def image_selected(
         parse_mode="HTML",
     )
 
-    client = DigitalOceanClient(settings.DO_API_TOKEN)
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         droplet = await client.create_droplet(
             name=name, region=region, size=size, image=image
