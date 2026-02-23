@@ -13,6 +13,8 @@ HELP_TEXT = (
     "🔑 /setkey — Set API key DigitalOcean kamu\n"
     "🗝️ /mykey — Cek API key yang tersimpan\n"
     "🗑️ /deletekey — Hapus API key tersimpan\n\n"
+    "💰 /balance — Cek saldo akun DigitalOcean\n"
+    "🎟️ /redeem — Redeem promo/kredit code\n\n"
     "📋 /list — Daftar semua droplet\n"
     "🔍 /info — Detail droplet tertentu\n"
     "🚀 /create — Buat droplet baru\n"

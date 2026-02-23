@@ -191,3 +191,23 @@ class DigitalOceanClient:
             "GET", "/images", params={"type": image_type, "per_page": 200}
         )
         return (data or {}).get("images", [])
+
+    # ── Billing ───────────────────────────────────────────────────────
+
+    async def get_balance(self) -> dict[str, Any]:
+        """Return the account balance information."""
+        data = await self._request("GET", "/customers/my/balance")
+        return data or {}
+
+    async def redeem_promo_code(self, promo_code: str) -> dict[str, Any]:
+        """Redeem a promo/credit code.
+
+        Returns the updated balance on success, raises DigitalOceanError on failure.
+        """
+        data = await self._request(
+            "POST",
+            "/customers/my/balance",
+            json={"promo_code": promo_code},
+        )
+        return data or {}
+

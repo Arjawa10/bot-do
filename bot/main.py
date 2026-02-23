@@ -8,7 +8,7 @@ from telegram import BotCommand, Update
 from telegram.ext import Application, ContextTypes
 
 from bot.config import settings
-from bot.handlers import start, list as list_handler, info, power, create, destroy, upgrade, setkey
+from bot.handlers import start, list as list_handler, info, power, create, destroy, upgrade, setkey, billing
 from bot.storage.api_keys import init_storage
 from bot.utils.logger import setup_logger
 
@@ -19,6 +19,8 @@ BOT_COMMANDS = [
     BotCommand("setkey",    "Set API key DigitalOcean kamu"),
     BotCommand("mykey",     "Cek API key yang tersimpan"),
     BotCommand("deletekey", "Hapus API key tersimpan"),
+    BotCommand("balance",   "Cek saldo akun DigitalOcean"),
+    BotCommand("redeem",    "Redeem promo/kredit code"),
     BotCommand("list",      "Daftar semua droplet"),
     BotCommand("info",      "Detail droplet tertentu"),
     BotCommand("create",    "Buat droplet baru"),
@@ -66,7 +68,7 @@ def main() -> None:
     )
 
     # Register handlers — order matters for ConversationHandlers
-    for module in (start, list_handler, info, power, create, destroy, upgrade, setkey):
+    for module in (start, list_handler, info, power, create, destroy, upgrade, setkey, billing):
         for handler in module.get_handlers():
             app.add_handler(handler)
 
