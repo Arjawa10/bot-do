@@ -32,8 +32,22 @@ logger = setup_logger("handler.create")
 # ── States ────────────────────────────────────────────────────────────────────
 NAME, TYPE, REGION, SIZE, IMAGE = range(5)
 
-# GPU size slug prefixes (DO naming convention)
-_GPU_PREFIXES = ("gpu-", "gd-")
+# GPU size slug prefixes — DO GPU droplets use ONLY the 'gpu-' prefix.
+# NOTE: 'gd-' = General Purpose Dedicated **CPU** (not GPU)
+_GPU_PREFIXES = ("gpu-",)
+
+# CPU size family labels (for display)
+_CPU_FAMILY: dict[str, str] = {
+    "s-":   "Basic",
+    "c-":   "CPU-Optimized",
+    "c2-":  "CPU-Opt 2x",
+    "g-":   "General Purpose",
+    "gd-":  "General Purpose Dedicated",
+    "m-":   "Memory-Optimized",
+    "m3-":  "Memory-Opt 3x",
+    "so-":  "Storage-Optimized",
+    "so1_": "Storage-Opt 1.5x",
+}
 
 # Max sizes/images to show in one keyboard (Telegram limit ≈ 100 buttons)
 _MAX_SIZES  = 25
@@ -41,7 +55,19 @@ _MAX_IMAGES = 20
 
 
 def _is_gpu_size(slug: str) -> bool:
-    return any(slug.startswith(p) for p in _GPU_PREFIXES)
+    """Return True only for genuine GPU droplet sizes (slug starts with 'gpu-')."""
+    return slug.startswith("gpu-")
+
+
+def _cpu_family_label(slug: str) -> str:
+    """Return a human-readable family tag for CPU sizes."""
+    # AMD variants end with '-amd'
+    is_amd = slug.endswith("-amd") or "-amd-" in slug
+    for prefix, label in _CPU_FAMILY.items():
+        if slug.startswith(prefix):
+            suffix = " AMD" if is_amd else " Intel"
+            return f"{label}{suffix}"
+    return "CPU"
 
 
 def _filter_sizes(
@@ -70,12 +96,16 @@ def _filter_sizes(
 
 
 def _size_label(s: dict) -> str:
-    slug   = s.get("slug", "?")
-    vcpus  = s.get("vcpus", "?")
-    mem_gb = round(s.get("memory", 0) / 1024, 1)
-    price  = s.get("price_monthly", "?")
-    disk   = s.get("disk", "?")
-    return f"{slug} • {vcpus}vCPU {mem_gb}GB RAM {disk}GB • ${price}/mo"
+    slug      = s.get("slug", "?")
+    vcpus     = s.get("vcpus", "?")
+    mem_gb    = round(s.get("memory", 0) / 1024, 1)
+    price     = s.get("price_monthly", "?")
+    disk      = s.get("disk", "?")
+    if _is_gpu_size(slug):
+        # GPU sizes: slug encodes GPU specs, no need for vCPU/RAM breakdown
+        return f"{slug} • {vcpus}vCPU {mem_gb}GB RAM • ${price}/mo"
+    family = _cpu_family_label(slug)
+    return f"{slug} • {family} • {vcpus}vCPU {mem_gb}GB RAM {disk}GB • ${price}/mo"
 
 
 # ── Step 0: /create ───────────────────────────────────────────────────────────
