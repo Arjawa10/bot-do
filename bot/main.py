@@ -16,8 +16,9 @@ logger = setup_logger("main")
 
 # Commands shown in Telegram's "/" menu autocomplete
 BOT_COMMANDS = [
-    BotCommand("setkey",    "Set API key DigitalOcean kamu"),
-    BotCommand("mykey",     "Cek API key yang tersimpan"),
+    BotCommand("setkey",    "Tambah API key DigitalOcean"),
+    BotCommand("mykey",     "Lihat semua API key tersimpan"),
+    BotCommand("usekey",    "Ganti API key aktif"),
     BotCommand("deletekey", "Hapus API key tersimpan"),
     BotCommand("balance",   "Cek saldo akun DigitalOcean"),
     BotCommand("redeem",    "Redeem promo/kredit code"),
