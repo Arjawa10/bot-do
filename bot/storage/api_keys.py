@@ -46,8 +46,16 @@ def _get_pg_connection():
 
 
 def _pg_init() -> None:
+    """Create or migrate the user_api_keys table.
+
+    Old schema: (user_id BIGINT PK, token TEXT)
+    New schema: (user_id BIGINT PK, data JSONB)
+
+    If the old schema is detected, existing rows are migrated automatically.
+    """
     with _get_pg_connection() as conn:
         with conn.cursor() as cur:
+            # 1. Create table with new schema (no-op if already exists)
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS user_api_keys (
@@ -56,7 +64,48 @@ def _pg_init() -> None:
                 )
                 """
             )
+
+            # 2. Detect old 'token' column (schema migration needed)
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'user_api_keys'
+                  AND column_name = 'token'
+                """
+            )
+            old_schema = cur.fetchone() is not None
+
+            if old_schema:
+                logger.info("Old schema detected — migrating 'token' column to JSONB 'data'.")
+
+                # 2a. Add data column if not yet present
+                cur.execute(
+                    """
+                    ALTER TABLE user_api_keys
+                    ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}'
+                    """
+                )
+
+                # 2b. Migrate existing rows: token → {"keys": {"Default": token}, "active": "Default"}
+                cur.execute("SELECT user_id, token FROM user_api_keys WHERE token IS NOT NULL")
+                rows = cur.fetchall()
+                for uid, token in rows:
+                    migrated = json.dumps({
+                        "keys":   {"Default": token},
+                        "active": "Default",
+                    })
+                    cur.execute(
+                        "UPDATE user_api_keys SET data = %s WHERE user_id = %s",
+                        (migrated, uid),
+                    )
+                logger.info("Migrated %d rows to new schema.", len(rows))
+
+                # 2c. Drop the old token column
+                cur.execute("ALTER TABLE user_api_keys DROP COLUMN IF EXISTS token")
+                logger.info("Dropped old 'token' column.")
+
         conn.commit()
+
 
 
 def _pg_load(user_id: int) -> dict:
