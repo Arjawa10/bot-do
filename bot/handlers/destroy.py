@@ -175,5 +175,6 @@ def get_handlers() -> list[ConversationHandler]:
                 ],
             },
             fallbacks=[CommandHandler("cancel", cancel)],
+            per_message=True,
         )
     ]
