@@ -23,26 +23,36 @@ WAITING_FOR_PROMO = 1
 
 
 def _format_balance(data: dict) -> str:
-    """Format balance API response into a readable message."""
-    month_to_date   = data.get("month_to_date_usage", "0.00")
-    account_balance = data.get("account_balance", "0.00")
-    month_to_date_balance = data.get("month_to_date_balance", "0.00")
-    generated_at    = data.get("generated_at", "-")
+    """Format balance API response into a readable message.
 
-    # Convert to float for sign comparison
+    NOTE: DigitalOcean's /v2/customers/my/balance endpoint only returns
+    *cash* balance and usage. Promotional credits (promo codes, AMD credits, etc.)
+    are NOT exposed via the public API — they appear only in the dashboard.
+    """
+    month_to_date         = data.get("month_to_date_usage", "0.00")
+    account_balance       = data.get("account_balance", "0.00")
+    month_to_date_balance = data.get("month_to_date_balance", "0.00")
+    generated_at          = data.get("generated_at", "-")
+
     try:
         balance_float = float(account_balance)
         balance_sign  = "🟢" if balance_float >= 0 else "🔴"
     except ValueError:
-        balance_float = 0
+        balance_float = 0.0
         balance_sign  = "⚪"
+
+    ts = generated_at[:19].replace("T", " ") if len(generated_at) >= 19 else generated_at
 
     return (
         f"💰 <b>Saldo Akun DigitalOcean</b>\n\n"
-        f"{balance_sign} <b>Account Balance:</b> <code>${account_balance}</code>\n"
+        f"{balance_sign} <b>Cash Balance:</b> <code>${account_balance}</code>\n"
         f"📊 <b>Usage Bulan Ini:</b> <code>${month_to_date}</code>\n"
-        f"📉 <b>Balance Bulan Ini:</b> <code>${month_to_date_balance}</code>\n\n"
-        f"🕐 <i>Diperbarui: {generated_at[:19].replace('T', ' ')} UTC</i>"
+        f"📉 <b>Net Bulan Ini:</b> <code>${month_to_date_balance}</code>\n\n"
+        f"ℹ️ <i>Cash balance adalah saldo tunai / prepaid.\n"
+        f"Promotional credits (promo code, AMD credit, dll.) "
+        f"<b>tidak ditampilkan API</b> — lihat di:\n"
+        f"<a href='https://cloud.digitalocean.com/account/billing'>Dashboard Billing DO</a></i>\n\n"
+        f"🕐 <i>{ts} UTC</i>"
     )
 
 
@@ -72,12 +82,18 @@ async def balance_command(
         finally:
             await client.close()
 
-        await msg.edit_text(_format_balance(data), parse_mode="HTML")
+        logger.debug("Balance API response: %s", data)
+        await msg.edit_text(
+            _format_balance(data),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
     except DigitalOceanError as exc:
         await msg.edit_text(exc.message, parse_mode="HTML")
     except Exception as exc:
         logger.exception("Error in /balance")
         await msg.edit_text(f"❌ Terjadi kesalahan: {exc}", parse_mode="HTML")
+
 
 
 # ── /redeem ───────────────────────────────────────────────────────────────────
