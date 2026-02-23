@@ -9,6 +9,7 @@ from telegram.ext import Application, ContextTypes
 
 from bot.config import settings
 from bot.handlers import start, list as list_handler, info, power, create, destroy, upgrade, setkey
+from bot.storage.api_keys import init_storage
 from bot.utils.logger import setup_logger
 
 logger = setup_logger("main")
@@ -46,6 +47,7 @@ def main() -> None:
     app.add_error_handler(error_handler)
 
     logger.info("Bot started. Allowed users: %s", settings.ALLOWED_USER_IDS)
+    init_storage()
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
