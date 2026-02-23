@@ -2,15 +2,16 @@
 
 Flow:
   1. /create         → ask droplet name
-  2. name received   → ask region (from API — all available)
-  3. region selected → fetch sizes available IN that region, show grouped by category
-  4. size selected   → ask image/OS
-  5. image selected  → create droplet
+  2. name received   → ask region
+  3. region selected → show size CATEGORIES found in region
+  4. category picked → show sizes in that category
+  5. size selected   → ask image/OS
+  6. image selected  → create droplet
 
-NOTE: CPU/GPU distinction is done by labeling each size by its category.
-The DO API does not expose account-level restrictions (e.g. AMD-only access),
-so we show everything the region reports as available. If a size is locked for
-your account, DO will return an error at creation time.
+IMPORTANT: The DO API does **not** expose account-level size restrictions.
+For example, an account with only AMD access will still see Intel sizes
+listed as 'available'. The only way to truly know is to attempt creation.
+If creation fails, we show a clear "size not available for your account" hint.
 """
 
 from __future__ import annotations
@@ -34,40 +35,39 @@ from bot.utils.logger import setup_logger
 logger = setup_logger("handler.create")
 
 # ── States ────────────────────────────────────────────────────────────────────
-NAME, REGION, SIZE, IMAGE = range(4)
+NAME, REGION, CATEGORY, SIZE, IMAGE = range(5)
 
-_MAX_SIZES  = 30
 _MAX_IMAGES = 20
 
+# ── Size categories ───────────────────────────────────────────────────────────
+# Order in _CATEGORIES matters — it is the display order.
+_CATEGORIES = [
+    ("gpu-",  "🎮 GPU Droplet"),
+    ("s-",    "🟢 Basic (Shared CPU)"),
+    ("c2-",   "⚡ CPU-Optimized 2x"),
+    ("c-",    "⚡ CPU-Optimized"),
+    ("g-",    "🔵 General Purpose"),
+    ("gd-",   "🔵 General Purpose Dedicated"),
+    ("m3-",   "🟣 Memory-Optimized 3x"),
+    ("m-",    "🟣 Memory-Optimized"),
+    ("so1_5-","🟠 Storage-Optimized 1.5x"),
+    ("so-",   "🟠 Storage-Optimized"),
+]
 
-# ── Size categorization ───────────────────────────────────────────────────────
+# Fallback
+_DEFAULT_CAT_LABEL = "💻 Other"
 
-def _size_category(slug: str) -> str:
-    """Return an emoji + label for a size slug."""
+
+def _categorize_slug(slug: str) -> tuple[str, str]:
+    """Return (prefix, label) for a size slug."""
     s = slug.lower()
-    if s.startswith("gpu-"):
-        return "🎮 GPU"
-    if s.startswith("gd-"):
-        return "🔵 General Purpose Dedicated"
-    if s.startswith("g-"):
-        is_amd = s.endswith("-amd") or "-amd-" in s
-        return "🔵 General Purpose AMD" if is_amd else "🔵 General Purpose"
-    if s.startswith("c2-"):
-        return "⚡ CPU-Opt 2x"
-    if s.startswith("c-"):
-        return "⚡ CPU-Optimized"
-    if s.startswith("m3-"):
-        return "🟣 Memory-Opt 3x"
-    if s.startswith("m-"):
-        return "🟣 Memory-Optimized"
-    if s.startswith("so1_"):
-        return "🟠 Storage-Opt 1.5x"
-    if s.startswith("so-"):
-        return "🟠 Storage-Optimized"
-    if s.startswith("s-"):
-        is_amd = s.endswith("-amd") or "-amd-" in s
-        return "🟢 Basic AMD" if is_amd else "🟢 Basic"
-    return "💻 Other"
+    for prefix, label in _CATEGORIES:
+        if s.startswith(prefix):
+            # Detect AMD variant
+            if "-amd" in s and not prefix.startswith("gpu"):
+                label = f"{label} AMD"
+            return prefix, label
+    return "other", _DEFAULT_CAT_LABEL
 
 
 def _size_label(s: dict) -> str:
@@ -76,50 +76,50 @@ def _size_label(s: dict) -> str:
     mem_gb = round(s.get("memory", 0) / 1024, 1)
     price  = s.get("price_monthly", "?")
     disk   = s.get("disk", "?")
-    cat    = _size_category(slug)
     if slug.startswith("gpu-"):
-        return f"{cat} | {slug} | {vcpus}vCPU {mem_gb}GB | ${price}/mo"
-    return f"{cat} | {vcpus}vCPU {mem_gb}GB {disk}GB disk | ${price}/mo"
+        return f"{slug} | {vcpus}vCPU {mem_gb}GB | ${price}/mo"
+    return f"{slug} | {vcpus}vCPU {mem_gb}GB {disk}GB | ${price}/mo"
 
 
-def _get_available_sizes(
-    all_sizes: list[dict],
-    region_slug: str,
-    region_sizes: list[str],       # slugs the region says are available
-) -> list[dict]:
-    """
-    Return sizes that are:
-    1. In the region's own 'sizes' list  (primary source of truth)
-    2. Have available=True in the global sizes response
-    Sorted by category then price.
-    """
+def _get_available_sizes(all_sizes: list[dict], region_slug: str, region_sizes: list[str]) -> list[dict]:
+    """Return sizes available in the region, sorted by price."""
     region_set = set(region_sizes)
-    result = [
-        s for s in all_sizes
-        if s.get("slug") in region_set and s.get("available", False)
-    ]
-    # Secondary fallback: use size.regions if region.sizes is empty
+    result = [s for s in all_sizes if s.get("slug") in region_set and s.get("available", False)]
     if not result:
-        result = [
-            s for s in all_sizes
-            if region_slug in s.get("regions", []) and s.get("available", False)
-        ]
-    result.sort(key=lambda s: (
-        0 if s.get("slug", "").startswith("gpu-") else 1,  # GPU first
-        float(s.get("price_monthly", 0)),
-    ))
-    return result[:_MAX_SIZES]
+        result = [s for s in all_sizes if region_slug in s.get("regions", []) and s.get("available", False)]
+    result.sort(key=lambda s: float(s.get("price_monthly", 0)))
+    return result
+
+
+def _build_categories(sizes: list[dict]) -> dict[str, list[dict]]:
+    """Group sizes by category. Returns {cat_key: [sizes]}."""
+    cats: dict[str, list[dict]] = {}
+    for s in sizes:
+        slug = s.get("slug", "")
+        prefix, _label = _categorize_slug(slug)
+        # Use prefix as key but also detect AMD/non-AMD separately
+        cat_key = prefix
+        if "-amd" in slug.lower() and not prefix.startswith("gpu"):
+            cat_key = f"{prefix}amd"
+        cats.setdefault(cat_key, []).append(s)
+    return cats
+
+
+def _cat_display_name(cat_key: str, sizes: list[dict]) -> str:
+    """Return display name for a category key."""
+    if sizes:
+        _, label = _categorize_slug(sizes[0].get("slug", ""))
+        return f"{label} ({len(sizes)})"
+    return cat_key
 
 
 # ── Step 0: /create ───────────────────────────────────────────────────────────
 
 @authorized_only
-async def create_command(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.effective_message.reply_text(  # type: ignore[union-attr]
         "🚀 <b>Buat Droplet Baru</b>\n\n"
-        "📝 <b>Langkah 1/4:</b> Masukkan nama untuk droplet:\n\n"
+        "📝 <b>Langkah 1/5:</b> Masukkan nama untuk droplet:\n\n"
         "Ketik /cancel untuk membatalkan.",
         parse_mode="HTML",
     )
@@ -128,16 +128,13 @@ async def create_command(
 
 # ── Step 1: Receive name, show regions ───────────────────────────────────────
 
-async def name_received(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def name_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     name = (update.effective_message.text or "").strip()  # type: ignore[union-attr]
     if not name:
         await update.effective_message.reply_text("⚠️ Nama tidak boleh kosong. Coba lagi:")  # type: ignore[union-attr]
         return NAME
 
     context.user_data["create_name"] = name  # type: ignore[index]
-
     msg = await update.effective_message.reply_text("⏳ Mengambil daftar region...", parse_mode="HTML")  # type: ignore[union-attr]
 
     user_id = update.effective_user.id  # type: ignore[union-attr]
@@ -155,16 +152,12 @@ async def name_received(
         await msg.edit_text("❌ Tidak ada region tersedia.", parse_mode="HTML")
         return ConversationHandler.END
 
-    # Store region metadata for later (to get region.sizes list)
     context.user_data["create_regions_meta"] = {r["slug"]: r for r in regions}  # type: ignore[index]
 
     keyboard: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for r in regions:
-        row.append(InlineKeyboardButton(
-            f"{r['slug']} — {r['name']}",
-            callback_data=f"cr_reg_{r['slug']}",
-        ))
+        row.append(InlineKeyboardButton(f"{r['slug']} — {r['name']}", callback_data=f"cr_reg_{r['slug']}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -172,20 +165,17 @@ async def name_received(
         keyboard.append(row)
 
     await msg.edit_text(
-        f"📛 Nama: <b>{name}</b>\n\n"
-        "🌍 <b>Langkah 2/4:</b> Pilih region:",
+        f"📛 Nama: <b>{name}</b>\n\n🌍 <b>Langkah 2/5:</b> Pilih region:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="HTML",
     )
     return REGION
 
 
-# ── Step 2: Region selected, show ALL available sizes ────────────────────────
+# ── Step 2: Region selected → show size CATEGORIES ──────────────────────────
 
 @authorized_only
-async def region_selected(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def region_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()  # type: ignore[union-attr]
 
@@ -195,8 +185,8 @@ async def region_selected(
     await query.edit_message_text("⏳ Mengambil daftar size...", parse_mode="HTML")  # type: ignore[union-attr]
 
     user_id = update.effective_user.id  # type: ignore[union-attr]
-    token   = get_token(user_id) or ""
-    client  = DigitalOceanClient(token)
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         all_sizes = await client.list_sizes()
     except DigitalOceanError as exc:
@@ -205,43 +195,107 @@ async def region_selected(
     finally:
         await client.close()
 
-    # Get region.sizes (the slugs this region says are available)
-    regions_meta: dict = context.user_data.get("create_regions_meta", {})  # type: ignore[union-attr]
-    region_obj   = regions_meta.get(region, {})
+    regions_meta = context.user_data.get("create_regions_meta", {})  # type: ignore[union-attr]
+    region_obj = regions_meta.get(region, {})
     region_sizes = region_obj.get("sizes", [])
 
     sizes = _get_available_sizes(all_sizes, region, region_sizes)
 
     if not sizes:
-        await query.edit_message_text(  # type: ignore[union-attr]
-            f"❌ Tidak ada size tersedia di region <b>{region}</b>.",
-            parse_mode="HTML",
-        )
+        await query.edit_message_text(f"❌ Tidak ada size tersedia di region <b>{region}</b>.", parse_mode="HTML")  # type: ignore[union-attr]
         return ConversationHandler.END
 
-    keyboard = [
-        [InlineKeyboardButton(_size_label(s), callback_data=f"cr_size_{s['slug']}")]
-        for s in sizes
-    ]
+    # Group by category
+    cats = _build_categories(sizes)
+    context.user_data["create_sizes_by_cat"] = cats  # type: ignore[index]
+
+    # Build category buttons
+    keyboard = []
+    for cat_key in cats:
+        cat_sizes = cats[cat_key]
+        display = _cat_display_name(cat_key, cat_sizes)
+        keyboard.append([InlineKeyboardButton(display, callback_data=f"cr_cat_{cat_key}")])
 
     name = context.user_data.get("create_name", "?")  # type: ignore[union-attr]
     await query.edit_message_text(  # type: ignore[union-attr]
         f"📛 Nama: <b>{name}</b>\n"
         f"🌍 Region: <b>{region}</b>\n\n"
-        f"💻 <b>Langkah 3/4:</b> Pilih size ({len(sizes)} tersedia):\n"
-        f"<i>Kategori: 🟢 Basic · ⚡ CPU-Opt · 🔵 Gen Purpose · 🟣 Mem-Opt · 🎮 GPU</i>",
+        f"📦 <b>Langkah 3/5:</b> Pilih kategori size:\n\n"
+        f"<i>⚠️ Catatan: DO API tidak membedakan size per akun.\n"
+        f"Jika size tertentu terkunci, akan muncul error saat create.</i>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML",
+    )
+    return CATEGORY
+
+
+# ── Step 3: Category picked → show sizes in that category ────────────────────
+
+@authorized_only
+async def category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()  # type: ignore[union-attr]
+
+    cat_key = query.data.replace("cr_cat_", "")  # type: ignore[union-attr]
+    cats = context.user_data.get("create_sizes_by_cat", {})  # type: ignore[union-attr]
+    sizes = cats.get(cat_key, [])
+
+    if not sizes:
+        await query.edit_message_text("❌ Tidak ada size dalam kategori ini.", parse_mode="HTML")  # type: ignore[union-attr]
+        return ConversationHandler.END
+
+    keyboard = [
+        [InlineKeyboardButton(_size_label(s), callback_data=f"cr_size_{s['slug']}")]
+        for s in sizes[:30]
+    ]
+    # Add back button
+    keyboard.append([InlineKeyboardButton("⬅️ Kembali ke kategori", callback_data="cr_cat_back")])
+
+    name = context.user_data.get("create_name", "?")  # type: ignore[union-attr]
+    region = context.user_data.get("create_region", "?")  # type: ignore[union-attr]
+    cat_label = _cat_display_name(cat_key, sizes)
+
+    await query.edit_message_text(  # type: ignore[union-attr]
+        f"📛 Nama: <b>{name}</b>\n"
+        f"🌍 Region: <b>{region}</b>\n"
+        f"📦 Kategori: <b>{cat_label}</b>\n\n"
+        f"💻 <b>Langkah 4/5:</b> Pilih size:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="HTML",
     )
     return SIZE
 
 
-# ── Step 3: Size selected, show images ───────────────────────────────────────
+@authorized_only
+async def category_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Back button: return to category selection."""
+    query = update.callback_query
+    await query.answer()  # type: ignore[union-attr]
+
+    cats = context.user_data.get("create_sizes_by_cat", {})  # type: ignore[union-attr]
+    keyboard = []
+    for cat_key in cats:
+        cat_sizes = cats[cat_key]
+        display = _cat_display_name(cat_key, cat_sizes)
+        keyboard.append([InlineKeyboardButton(display, callback_data=f"cr_cat_{cat_key}")])
+
+    name = context.user_data.get("create_name", "?")  # type: ignore[union-attr]
+    region = context.user_data.get("create_region", "?")  # type: ignore[union-attr]
+
+    await query.edit_message_text(  # type: ignore[union-attr]
+        f"📛 Nama: <b>{name}</b>\n"
+        f"🌍 Region: <b>{region}</b>\n\n"
+        f"📦 <b>Langkah 3/5:</b> Pilih kategori size:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML",
+    )
+    return CATEGORY
+
+
+# ── Step 4: Size selected, show images ───────────────────────────────────────
 
 @authorized_only
-async def size_selected(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def size_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()  # type: ignore[union-attr]
 
@@ -251,11 +305,10 @@ async def size_selected(
     await query.edit_message_text("⏳ Mengambil daftar image/OS...", parse_mode="HTML")  # type: ignore[union-attr]
 
     user_id = update.effective_user.id  # type: ignore[union-attr]
-    token   = get_token(user_id) or ""
-    client  = DigitalOceanClient(token)
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         images = await client.list_images("distribution")
-        # For GPU sizes, also include application images (CUDA, ML frameworks etc.)
         if size.startswith("gpu-"):
             try:
                 app_images = await client.list_images("application")
@@ -282,51 +335,51 @@ async def size_selected(
         for img in images
     ]
 
-    name   = context.user_data.get("create_name", "?")  # type: ignore[union-attr]
+    name = context.user_data.get("create_name", "?")  # type: ignore[union-attr]
     region = context.user_data.get("create_region", "?")  # type: ignore[union-attr]
     await query.edit_message_text(  # type: ignore[union-attr]
         f"📛 Nama: <b>{name}</b>\n"
         f"🌍 Region: <b>{region}</b>\n"
         f"💻 Size: <b>{size}</b>\n\n"
-        f"🖼️ <b>Langkah 4/4:</b> Pilih image/OS:",
+        f"🖼️ <b>Langkah 5/5:</b> Pilih image/OS:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="HTML",
     )
     return IMAGE
 
 
-# ── Step 4: Image selected → create ──────────────────────────────────────────
+# ── Step 5: Image selected → create ──────────────────────────────────────────
 
 @authorized_only
-async def image_selected(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    query  = update.callback_query
+async def image_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
     await query.answer()  # type: ignore[union-attr]
 
     image  = query.data.replace("cr_img_", "")  # type: ignore[union-attr]
-    name   = context.user_data.get("create_name", "droplet")    # type: ignore[union-attr]
-    region = context.user_data.get("create_region", "nyc1")     # type: ignore[union-attr]
+    name   = context.user_data.get("create_name", "droplet")      # type: ignore[union-attr]
+    region = context.user_data.get("create_region", "nyc1")       # type: ignore[union-attr]
     size   = context.user_data.get("create_size", "s-1vcpu-1gb")  # type: ignore[union-attr]
 
     await query.edit_message_text(  # type: ignore[union-attr]
         f"⏳ Membuat droplet <b>{name}</b>...\n\n"
-        f"🌍 Region: {region} | 💻 Size: {size}\n"
-        f"🖼️ Image: {image}",
+        f"🌍 Region: {region} | 💻 Size: {size} | 🖼️ Image: {image}",
         parse_mode="HTML",
     )
 
     user_id = update.effective_user.id  # type: ignore[union-attr]
-    token   = get_token(user_id) or ""
-    client  = DigitalOceanClient(token)
+    token = get_token(user_id) or ""
+    client = DigitalOceanClient(token)
     try:
         droplet = await client.create_droplet(name=name, region=region, size=size, image=image)
-        logger.info("Created droplet name=%s id=%s region=%s size=%s", name, droplet.get("id"), region, size)
+        logger.info("Created droplet name=%s id=%s", name, droplet.get("id"))
         await query.edit_message_text(format_droplet_created(droplet), parse_mode="HTML")  # type: ignore[union-attr]
     except DigitalOceanError as exc:
         await query.edit_message_text(  # type: ignore[union-attr]
+            f"❌ <b>Gagal membuat droplet</b>\n\n"
             f"{exc.message}\n\n"
-            "💡 <i>Jika ukuran ini terkunci untuk akun kamu, pilih size lain dan coba lagi.</i>",
+            f"💡 <i>Kemungkinan size <code>{size}</code> tidak tersedia untuk akun kamu.\n"
+            f"Coba gunakan size dari kategori yang berbeda (misal: Basic AMD).\n"
+            f"Gunakan /create untuk mencoba lagi.</i>",
             parse_mode="HTML",
         )
     except Exception as exc:
@@ -359,8 +412,12 @@ def get_handlers() -> list[ConversationHandler]:
                 REGION: [
                     CallbackQueryHandler(region_selected, pattern=r"^cr_reg_.+$")
                 ],
+                CATEGORY: [
+                    CallbackQueryHandler(category_selected, pattern=r"^cr_cat_(?!back).+$"),
+                ],
                 SIZE: [
-                    CallbackQueryHandler(size_selected, pattern=r"^cr_size_.+$")
+                    CallbackQueryHandler(size_selected, pattern=r"^cr_size_.+$"),
+                    CallbackQueryHandler(category_back, pattern=r"^cr_cat_back$"),
                 ],
                 IMAGE: [
                     CallbackQueryHandler(image_selected, pattern=r"^cr_img_.+$")
