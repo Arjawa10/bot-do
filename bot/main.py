@@ -55,11 +55,13 @@ BOT_COMMANDS = [
     BotCommand("projects",       "PS: Daftar semua project"),
     BotCommand("newproject",     "PS: Buat project baru"),
     BotCommand("delproject",     "PS: Hapus project"),
-    # ── Paperspace — Notebooks ────────────────────────────────────────────
-    BotCommand("notebooks",      "PS: Daftar semua notebook"),
-    BotCommand("newnotebook",    "PS: Buat notebook baru"),
-    BotCommand("stopnotebook",   "PS: Hentikan notebook"),
-    BotCommand("delnotebook",    "PS: Hapus notebook"),
+    # ── Paperspace — Machines ─────────────────────────────────────────────
+    BotCommand("psmachines",     "PS: Daftar semua machine"),
+    BotCommand("newmachine",     "PS: Buat machine baru"),
+    BotCommand("startmachine",   "PS: Nyalakan machine"),
+    BotCommand("stopmachine",    "PS: Hentikan machine"),
+    BotCommand("restartmachine", "PS: Restart machine"),
+    BotCommand("delmachine",     "PS: Hapus machine"),
     # ── General ───────────────────────────────────────────────────────────
     BotCommand("help",           "Tampilkan bantuan"),
 ]

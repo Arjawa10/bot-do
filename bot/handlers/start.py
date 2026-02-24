@@ -45,11 +45,13 @@ HELP_TEXT = (
     "/newproject — Buat project baru\n"
     "/delproject — Hapus project\n\n"
 
-    "📓 <b>Notebooks</b>\n"
-    "/notebooks — Daftar semua notebook\n"
-    "/newnotebook — Buat notebook baru\n"
-    "/stopnotebook — Hentikan notebook\n"
-    "/delnotebook — Hapus notebook\n\n"
+    "🖥️ <b>Machines</b>\n"
+    "/psmachines — Daftar semua machine\n"
+    "/newmachine — Buat machine baru\n"
+    "/startmachine — Nyalakan machine\n"
+    "/stopmachine — Hentikan machine\n"
+    "/restartmachine — Restart machine\n"
+    "/delmachine — Hapus machine\n\n"
 
     "❓ /help — Tampilkan bantuan ini\n"
 )

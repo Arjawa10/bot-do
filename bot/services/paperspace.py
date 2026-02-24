@@ -1,12 +1,11 @@
 """Async Paperspace by DigitalOcean API client using httpx.
 
-API base: https://api.paperspace.com/v1
-Auth:     Authorization: Bearer <api_key>
+API base : https://api.paperspace.com/v1
+Auth     : Authorization: Bearer <api_key>
 
 Covered resources:
-  - Projects   : list, create, delete
-  - Notebooks  : list, create, stop, delete
-  - Machines   : list, get (read-only)
+  - Projects : list, create, delete
+  - Machines : list, get, create, start, stop, restart, delete
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ class PaperspaceClient:
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
             headers={
-                "x-api-key": token,
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
             },
             timeout=30.0,
@@ -102,7 +101,7 @@ class PaperspaceClient:
                 f"❌ Gagal menghubungi Paperspace: {exc}"
             ) from exc
 
-    # ── Helper to validate token ──────────────────────────────────────
+    # ── Token validation ─────────────────────────────────────────────
 
     async def validate_token(self) -> bool:
         """Validate the token by listing projects. Raises PaperspaceError on failure."""
@@ -112,7 +111,6 @@ class PaperspaceClient:
     # ── Projects ─────────────────────────────────────────────────────
 
     async def list_projects(self) -> list[dict[str, Any]]:
-        """List all Paperspace projects for the authenticated team."""
         data = await self._request("GET", "/projects")
         if isinstance(data, list):
             return data
@@ -120,82 +118,16 @@ class PaperspaceClient:
             return data.get("items", data.get("projects", []))
         return []
 
-    async def get_project(self, project_id: str) -> dict[str, Any]:
-        """Get a specific project by ID."""
-        data = await self._request("GET", f"/projects/{project_id}")
-        return data if isinstance(data, dict) else {}
-
     async def create_project(self, name: str) -> dict[str, Any]:
-        """Create a new project with the given name."""
         data = await self._request("POST", "/projects", json={"name": name})
         return data if isinstance(data, dict) else {}
 
     async def delete_project(self, project_id: str) -> None:
-        """Delete a project by ID."""
         await self._request("DELETE", f"/projects/{project_id}")
 
-    # ── Notebooks ────────────────────────────────────────────────────
-
-    async def list_notebooks(
-        self, project_id: str | None = None
-    ) -> list[dict[str, Any]]:
-        """List all notebooks, optionally filtered by project ID."""
-        params: dict[str, Any] = {}
-        if project_id:
-            params["projectId"] = project_id
-        data = await self._request("GET", "/notebooks", params=params or None)
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            return data.get("items", data.get("notebooks", []))
-        return []
-
-    async def get_notebook(self, notebook_id: str) -> dict[str, Any]:
-        """Get a specific notebook by ID."""
-        data = await self._request("GET", f"/notebooks/{notebook_id}")
-        return data if isinstance(data, dict) else {}
-
-    async def create_notebook(
-        self,
-        project_id: str,
-        machine_type: str,
-        name: str,
-        *,
-        container: str = "paperspace/nb-pytorch:latest",
-        auto_shutdown_timeout: int = 1,
-    ) -> dict[str, Any]:
-        """Create and start a new notebook.
-
-        Args:
-            project_id: ID of the parent project.
-            machine_type: Machine type slug, e.g. 'P4000', 'P5000', 'C5'.
-            name: Human-readable notebook name.
-            container: Docker image for the notebook (default: PyTorch).
-            auto_shutdown_timeout: Hours of inactivity before auto-shutdown.
-        """
-        body: dict[str, Any] = {
-            "projectId": project_id,
-            "machineType": machine_type,
-            "name": name,
-            "container": container,
-            "autoShutdownTimeout": auto_shutdown_timeout,
-        }
-        data = await self._request("POST", "/notebooks", json=body)
-        return data if isinstance(data, dict) else {}
-
-    async def stop_notebook(self, notebook_id: str) -> dict[str, Any]:
-        """Stop a running notebook."""
-        data = await self._request("POST", f"/notebooks/{notebook_id}/stop")
-        return data if isinstance(data, dict) else {}
-
-    async def delete_notebook(self, notebook_id: str) -> None:
-        """Delete a notebook by ID."""
-        await self._request("DELETE", f"/notebooks/{notebook_id}")
-
-    # ── Machines (read-only) ─────────────────────────────────────────
+    # ── Machines ─────────────────────────────────────────────────────
 
     async def list_machines(self) -> list[dict[str, Any]]:
-        """List all Paperspace machines for the authenticated team."""
         data = await self._request("GET", "/machines")
         if isinstance(data, list):
             return data
@@ -204,6 +136,51 @@ class PaperspaceClient:
         return []
 
     async def get_machine(self, machine_id: str) -> dict[str, Any]:
-        """Get details of a specific machine."""
         data = await self._request("GET", f"/machines/{machine_id}")
         return data if isinstance(data, dict) else {}
+
+    async def create_machine(
+        self,
+        name: str,
+        machine_type: str,
+        template_id: str,
+        region: str,
+        disk_size: int = 50,
+        *,
+        start_on_create: bool = True,
+    ) -> dict[str, Any]:
+        """Create a new Paperspace Machine.
+
+        Args:
+            name: Human-readable machine name.
+            machine_type: Machine type slug, e.g. 'P4000', 'RTX4000', 'C5'.
+            template_id: OS template ID (e.g. 'tlvh5xr' for Ubuntu 20.04).
+            region: Region slug, e.g. 'ny2', 'ca1'.
+            disk_size: Disk size in GB (default: 50).
+            start_on_create: Whether to start the machine after creation.
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "machineType": machine_type,
+            "templateId": template_id,
+            "region": region,
+            "diskSize": disk_size,
+            "startOnCreate": start_on_create,
+        }
+        data = await self._request("POST", "/machines", json=body)
+        return data if isinstance(data, dict) else {}
+
+    async def start_machine(self, machine_id: str) -> dict[str, Any]:
+        data = await self._request("PATCH", f"/machines/{machine_id}/start")
+        return data if isinstance(data, dict) else {}
+
+    async def stop_machine(self, machine_id: str) -> dict[str, Any]:
+        data = await self._request("PATCH", f"/machines/{machine_id}/stop")
+        return data if isinstance(data, dict) else {}
+
+    async def restart_machine(self, machine_id: str) -> dict[str, Any]:
+        data = await self._request("PATCH", f"/machines/{machine_id}/restart")
+        return data if isinstance(data, dict) else {}
+
+    async def delete_machine(self, machine_id: str) -> None:
+        await self._request("DELETE", f"/machines/{machine_id}")
