@@ -35,16 +35,23 @@ _NO_KEY_MSG = (
     "Gunakan /pskey untuk menyimpan API key Paperspace kamu."
 )
 
-# Common machine types
+# Common machine types — Free tier first, then paid
 _MACHINE_TYPES = [
-    ("C5",       "🖥️  C5    — CPU, 8 vCPU 30 GB RAM"),
-    ("P4000",    "⚡ P4000 — Quadro P4000 8 vCPU"),
-    ("P5000",    "🔥 P5000 — Quadro P5000 8 vCPU"),
-    ("RTX4000",  "💎 RTX4000 — 8 vCPU 30 GB RAM"),
-    ("A4000",    "⚙️  A4000 — NVIDIA A4000"),
-    ("A5000",    "⚙️  A5000 — NVIDIA A5000"),
-    ("A6000",    "⚙️  A6000 — NVIDIA A6000 48 GB"),
-    ("A100-80G", "🚀 A100  — 80 GB HBM2e"),
+    # ── Free ─────────────────────────────────────────────────────────
+    ("Free-P5000",   "🆓 Free-P5000   — GPU 16 GB, 8 vCPU, 30 GB RAM"),
+    ("Free-RTX4000", "🆓 Free-RTX4000 — GPU 8 GB,  8 vCPU, 30 GB RAM"),
+    ("Free-RTX5000", "🆓 Free-RTX5000 — GPU 16 GB, 8 vCPU, 30 GB RAM"),
+    ("Free-A4000",   "🆓 Free-A4000   — GPU 16 GB, 8 vCPU, 45 GB RAM"),
+    ("Free-CPU",     "🆓 Free-CPU     — CPU only,  8 vCPU, 30 GB RAM"),
+    # ── Paid GPU ─────────────────────────────────────────────────────
+    ("C5",       "💰 C5    — CPU, 8 vCPU 30 GB RAM ($0.06/hr)"),
+    ("P4000",    "💰 P4000 — Quadro P4000, 8 vCPU ($0.51/hr)"),
+    ("P5000",    "💰 P5000 — Quadro P5000, 8 vCPU ($0.78/hr)"),
+    ("RTX4000",  "💰 RTX4000 — 8 vCPU 30 GB RAM ($0.56/hr)"),
+    ("A4000",    "💰 A4000 — NVIDIA A4000 ($0.76/hr)"),
+    ("A5000",    "💰 A5000 — NVIDIA A5000 ($1.38/hr)"),
+    ("A6000",    "💰 A6000 — NVIDIA A6000 48 GB ($1.89/hr)"),
+    ("A100-80G", "💰 A100  — 80 GB HBM2e ($3.09/hr)"),
 ]
 
 # Common regions
