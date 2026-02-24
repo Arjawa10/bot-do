@@ -45,7 +45,7 @@ class PaperspaceClient:
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
             headers={
-                "Authorization": f"Bearer {token}",
+                "x-api-key": token,
                 "Content-Type": "application/json",
             },
             timeout=30.0,
