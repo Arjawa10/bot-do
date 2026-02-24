@@ -1,8 +1,15 @@
-"""/projects, /newproject, /delproject — Paperspace project management."""
+"""/projects, /newproject, /delproject — Paperspace project management.
+
+NOTE: GET /v1/projects returns 500 Internal Server Error on Paperspace's side
+(confirmed via direct API testing — this is a known server-side bug).
+      - /projects will show a notice about this limitation
+      - /newproject (POST /projects) works fine
+      - /delproject accepts a project ID manually
+"""
 
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -19,20 +26,25 @@ from bot.utils.logger import setup_logger
 
 logger = setup_logger("handler.ps_projects")
 
-# Conversation state
-PS_PRJ_WAITING_NAME = 0
+# Conversation states
+PS_PRJ_WAITING_NAME   = 0
+PS_DEL_WAITING_ID     = 1
 
 _NO_KEY_MSG = (
     "⚠️ API key Paperspace belum diset.\n"
     "Gunakan /pskey untuk menyimpan API key Paperspace kamu."
 )
 
-
-def _fmt_project(p: dict) -> str:
-    pid = p.get("id", "-")
-    name = p.get("name", "Unnamed")
-    nb_count = p.get("notebookCount", p.get("deploymentCount", "?"))
-    return f"• <b>{name}</b> — <code>{pid}</code>"
+_PROJECTS_API_BUG = (
+    "⚠️ <b>Fitur ini terbatas</b>\n\n"
+    "Endpoint <code>GET /projects</code> dari Paperspace API saat ini mengembalikan "
+    "<b>500 Internal Server Error</b> secara konsisten — ini adalah bug di sisi server Paperspace, "
+    "bukan di bot ini.\n\n"
+    "<b>Yang masih bisa dilakukan:</b>\n"
+    "• /newproject — Buat project baru ✅\n"
+    "• /delproject — Hapus project dengan ID tertentu ✅\n\n"
+    "<i>ID project bisa dicatat saat membuat project baru via /newproject.</i>"
+)
 
 
 # ── /projects ─────────────────────────────────────────────────────────────────
@@ -41,42 +53,14 @@ def _fmt_project(p: dict) -> str:
 async def projects_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """/projects — list all Paperspace projects."""
+    """/projects — inform about the Paperspace API bug for project listing."""
     user_id = update.effective_user.id  # type: ignore[union-attr]
     token = get_ps_token(user_id)
     if not token:
         await update.effective_message.reply_text(_NO_KEY_MSG, parse_mode="HTML")  # type: ignore[union-attr]
         return
 
-    msg = await update.effective_message.reply_text(  # type: ignore[union-attr]
-        "⏳ Mengambil daftar project Paperspace...", parse_mode="HTML"
-    )
-    try:
-        client = PaperspaceClient(token)
-        try:
-            projects = await client.list_projects()
-        finally:
-            await client.close()
-
-        if not projects:
-            await msg.edit_text(
-                "📂 Tidak ada project Paperspace.\n\nGunakan /newproject untuk membuat project baru.",
-                parse_mode="HTML",
-            )
-            return
-
-        lines = [_fmt_project(p) for p in projects]
-        text = (
-            f"📂 <b>Paperspace Projects</b> ({len(projects)} project)\n\n"
-            + "\n".join(lines)
-            + "\n\n<i>Gunakan /newproject untuk membuat project baru.</i>"
-        )
-        await msg.edit_text(text, parse_mode="HTML")
-    except PaperspaceError as exc:
-        await msg.edit_text(exc.message, parse_mode="HTML")
-    except Exception as exc:
-        logger.exception("Error in /projects")
-        await msg.edit_text(f"❌ Terjadi kesalahan: {exc}", parse_mode="HTML")
+    await update.effective_message.reply_text(_PROJECTS_API_BUG, parse_mode="HTML")  # type: ignore[union-attr]
 
 
 # ── /newproject ───────────────────────────────────────────────────────────────
@@ -131,9 +115,10 @@ async def newproject_receive_name(
         pid = project.get("id", "-")
         await msg.edit_text(
             f"✅ <b>Project berhasil dibuat!</b>\n\n"
-            f"📂 Nama: <b>{name}</b>\n"
-            f"🆔 ID: <code>{pid}</code>\n\n"
-            "Gunakan /projects untuk melihat semua project.",
+            f"📂 Nama : <b>{name}</b>\n"
+            f"🆔 ID   : <code>{pid}</code>\n\n"
+            "💡 <b>Simpan ID ini</b> — diperlukan jika ingin menghapus project nanti "
+            "karena Paperspace API tidak mendukung listing project saat ini.",
             parse_mode="HTML",
         )
     except PaperspaceError as exc:
@@ -159,67 +144,43 @@ async def newproject_cancel(
 @authorized_only
 async def delproject_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """/delproject — show inline keyboard to pick a project to delete."""
+) -> int:
+    """/delproject — ask for project ID to delete (list not available due to API bug)."""
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    if not get_ps_token(user_id):
+        await update.effective_message.reply_text(_NO_KEY_MSG, parse_mode="HTML")  # type: ignore[union-attr]
+        return ConversationHandler.END
+
+    await update.effective_message.reply_text(  # type: ignore[union-attr]
+        "🗑️ <b>Hapus Project Paperspace</b>\n\n"
+        "⚠️ Karena Paperspace API tidak mendukung listing project saat ini, "
+        "masukkan <b>Project ID</b> secara manual.\n\n"
+        "Project ID didapat saat membuat project via /newproject.\n"
+        "Contoh: <code>pfr3vb3sjene3</code>\n\n"
+        "Ketik /cancel untuk membatalkan.",
+        parse_mode="HTML",
+    )
+    return PS_DEL_WAITING_ID
+
+
+async def delproject_receive_id(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Receive project ID and delete it."""
+    project_id = (update.effective_message.text or "").strip()  # type: ignore[union-attr]
+    if not project_id:
+        await update.effective_message.reply_text(  # type: ignore[union-attr]
+            "⚠️ ID tidak boleh kosong. Masukkan Project ID:", parse_mode="HTML"
+        )
+        return PS_DEL_WAITING_ID
+
     user_id = update.effective_user.id  # type: ignore[union-attr]
     token = get_ps_token(user_id)
     if not token:
         await update.effective_message.reply_text(_NO_KEY_MSG, parse_mode="HTML")  # type: ignore[union-attr]
-        return
+        return ConversationHandler.END
 
     msg = await update.effective_message.reply_text(  # type: ignore[union-attr]
-        "⏳ Mengambil daftar project...", parse_mode="HTML"
-    )
-    try:
-        client = PaperspaceClient(token)
-        try:
-            projects = await client.list_projects()
-        finally:
-            await client.close()
-
-        if not projects:
-            await msg.edit_text(
-                "📂 Tidak ada project yang bisa dihapus.", parse_mode="HTML"
-            )
-            return
-
-        keyboard = [
-            [InlineKeyboardButton(
-                f"🗑️ {p.get('name', p.get('id', '?'))}",
-                callback_data=f"delprj_{p.get('id')}",
-            )]
-            for p in projects
-        ]
-        await msg.edit_text(
-            "🗑️ <b>Hapus Project Paperspace</b>\n\n"
-            "⚠️ <b>Perhatian:</b> menghapus project bisa menghapus semua resource di dalamnya.\n\n"
-            "Pilih project yang ingin dihapus:",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-    except PaperspaceError as exc:
-        await msg.edit_text(exc.message, parse_mode="HTML")
-    except Exception as exc:
-        logger.exception("Error in /delproject")
-        await msg.edit_text(f"❌ Terjadi kesalahan: {exc}", parse_mode="HTML")
-
-
-@authorized_only
-async def delproject_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """Inline button: confirm and delete a project."""
-    query = update.callback_query
-    await query.answer()  # type: ignore[union-attr]
-    user_id = update.effective_user.id  # type: ignore[union-attr]
-    project_id = query.data.replace("delprj_", "", 1)  # type: ignore[union-attr]
-
-    token = get_ps_token(user_id)
-    if not token:
-        await query.edit_message_text(_NO_KEY_MSG, parse_mode="HTML")  # type: ignore[union-attr]
-        return
-
-    await query.edit_message_text(  # type: ignore[union-attr]
         f"⏳ Menghapus project <code>{project_id}</code>...", parse_mode="HTML"
     )
     try:
@@ -229,20 +190,26 @@ async def delproject_callback(
         finally:
             await client.close()
 
-        await query.edit_message_text(  # type: ignore[union-attr]
-            f"🗑️ Project <code>{project_id}</code> berhasil dihapus.\n\n"
-            "Gunakan /projects untuk melihat sisa project.",
+        await msg.edit_text(
+            f"🗑️ Project <code>{project_id}</code> berhasil dihapus.",
             parse_mode="HTML",
         )
     except PaperspaceError as exc:
-        await query.edit_message_text(  # type: ignore[union-attr]
+        await msg.edit_text(
             f"❌ <b>Gagal menghapus project</b>\n\n{exc.message}", parse_mode="HTML"
         )
     except Exception as exc:
-        logger.exception("Error in delproject callback")
-        await query.edit_message_text(  # type: ignore[union-attr]
-            f"❌ Terjadi kesalahan: {exc}", parse_mode="HTML"
-        )
+        logger.exception("Error in /delproject")
+        await msg.edit_text(f"❌ Terjadi kesalahan: {exc}", parse_mode="HTML")
+
+    return ConversationHandler.END
+
+
+async def delproject_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    await update.effective_message.reply_text("❎ Dibatalkan.", parse_mode="HTML")  # type: ignore[union-attr]
+    return ConversationHandler.END
 
 
 # ── Registration ──────────────────────────────────────────────────────────────
@@ -258,9 +225,18 @@ def get_handlers() -> list:
         fallbacks=[CommandHandler("cancel", newproject_cancel)],
         name="newproject_conversation",
     )
+    delproject_conv = ConversationHandler(
+        entry_points=[CommandHandler("delproject", delproject_command)],
+        states={
+            PS_DEL_WAITING_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, delproject_receive_id),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", delproject_cancel)],
+        name="delproject_conversation",
+    )
     return [
         CommandHandler("projects", projects_command),
         newproject_conv,
-        CommandHandler("delproject", delproject_command),
-        CallbackQueryHandler(delproject_callback, pattern=r"^delprj_.+$"),
+        delproject_conv,
     ]

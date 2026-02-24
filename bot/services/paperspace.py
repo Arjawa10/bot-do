@@ -104,8 +104,12 @@ class PaperspaceClient:
     # ── Token validation ─────────────────────────────────────────────
 
     async def validate_token(self) -> bool:
-        """Validate the token by listing projects. Raises PaperspaceError on failure."""
-        await self.list_projects()
+        """Validate the token by listing machines. Raises PaperspaceError on failure.
+
+        Note: GET /projects returns 500 on Paperspace side (known server bug).
+        We use GET /machines instead which is known to work.
+        """
+        await self.list_machines()
         return True
 
     # ── Projects ─────────────────────────────────────────────────────
