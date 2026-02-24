@@ -8,24 +8,52 @@ from telegram.ext import CommandHandler, ContextTypes
 from bot.middleware.auth import authorized_only
 
 HELP_TEXT = (
-    "🤖 <b>DigitalOcean Droplet Manager</b>\n\n"
-    "Berikut daftar perintah yang tersedia:\n\n"
-    "🔑 /setkey — Tambah API key DigitalOcean\n"
-    "🗝️ /mykey — Lihat semua API key tersimpan\n"
-    "🔄 /usekey — Ganti API key aktif\n"
-    "🗑️ /deletekey — Hapus API key tersimpan\n\n"
-    "💰 /balance — Cek saldo akun DigitalOcean\n"
-    "🎟️ /redeem — Redeem promo/kredit code\n\n"
-    "📋 /list — Daftar semua droplet\n"
-    "🔍 /info — Detail droplet tertentu\n"
-    "🚀 /create — Buat droplet baru\n"
-    "🗑️ /destroy — Hapus droplet\n"
-    "⬆️ /upgrade — Resize (upgrade) droplet\n"
-    "🟢 /poweron — Nyalakan droplet\n"
-    "🔴 /poweroff — Matikan droplet\n"
-    "🔄 /reboot — Reboot droplet\n"
+    "🤖 <b>DigitalOcean &amp; Paperspace Manager</b>\n\n"
+
+    "━━━ ☁️ <b>DIGITALOCEAN</b> ━━━\n\n"
+
+    "🔑 <b>API Key</b>\n"
+    "/setkey — Tambah API key DO\n"
+    "/mykey — Lihat semua key tersimpan\n"
+    "/usekey — Ganti key aktif\n"
+    "/deletekey — Hapus key tersimpan\n\n"
+
+    "💰 <b>Billing</b>\n"
+    "/balance — Cek saldo akun DO\n"
+    "/redeem — Redeem promo/kredit code\n\n"
+
+    "🖥️ <b>Droplets</b>\n"
+    "/list — Daftar semua droplet\n"
+    "/info — Detail droplet\n"
+    "/create — Buat droplet baru\n"
+    "/destroy — Hapus droplet\n"
+    "/upgrade — Resize droplet\n"
+    "/poweron — Nyalakan droplet\n"
+    "/poweroff — Matikan droplet\n"
+    "/reboot — Reboot droplet\n\n"
+
+    "━━━ 🟣 <b>PAPERSPACE</b> ━━━\n\n"
+
+    "🔑 <b>API Key</b>\n"
+    "/pskey — Tambah API key Paperspace\n"
+    "/mypsk — Lihat semua key tersimpan\n"
+    "/usepsk — Ganti key aktif\n"
+    "/deletepsk — Hapus key tersimpan\n\n"
+
+    "📂 <b>Projects</b>\n"
+    "/projects — Daftar semua project\n"
+    "/newproject — Buat project baru\n"
+    "/delproject — Hapus project\n\n"
+
+    "📓 <b>Notebooks</b>\n"
+    "/notebooks — Daftar semua notebook\n"
+    "/newnotebook — Buat notebook baru\n"
+    "/stopnotebook — Hentikan notebook\n"
+    "/delnotebook — Hapus notebook\n\n"
+
     "❓ /help — Tampilkan bantuan ini\n"
 )
+
 
 
 @authorized_only
