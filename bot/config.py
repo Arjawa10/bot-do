@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     TG_BOT_TOKEN: str
-    DO_API_TOKEN: str = ""  # optional — user can set per-user key via /setkey
+    DO_API_TOKEN: str = ""  # optional — user can set per-user DO key via /setkey
+    PS_API_TOKEN: str = ""  # optional — user can set per-user Paperspace key via /pskey
     ALLOWED_USER_IDS: list[int] = []
     DATABASE_URL: str = ""  # set automatically by Heroku Postgres add-on
 

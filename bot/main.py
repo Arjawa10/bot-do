@@ -8,7 +8,20 @@ from telegram import BotCommand, Update
 from telegram.ext import Application, ContextTypes
 
 from bot.config import settings
-from bot.handlers import start, list as list_handler, info, power, create, destroy, upgrade, setkey, billing
+from bot.handlers import (
+    start,
+    list as list_handler,
+    info,
+    power,
+    create,
+    destroy,
+    upgrade,
+    setkey,
+    billing,
+    ps_setkey,
+    ps_projects,
+    ps_notebooks,
+)
 from bot.storage.api_keys import init_storage
 from bot.utils.logger import setup_logger
 
@@ -16,21 +29,39 @@ logger = setup_logger("main")
 
 # Commands shown in Telegram's "/" menu autocomplete
 BOT_COMMANDS = [
-    BotCommand("setkey",    "Tambah API key DigitalOcean"),
-    BotCommand("mykey",     "Lihat semua API key tersimpan"),
-    BotCommand("usekey",    "Ganti API key aktif"),
-    BotCommand("deletekey", "Hapus API key tersimpan"),
-    BotCommand("balance",   "Cek saldo akun DigitalOcean"),
-    BotCommand("redeem",    "Redeem promo/kredit code"),
-    BotCommand("list",      "Daftar semua droplet"),
-    BotCommand("info",      "Detail droplet tertentu"),
-    BotCommand("create",    "Buat droplet baru"),
-    BotCommand("destroy",   "Hapus droplet"),
-    BotCommand("upgrade",   "Resize (upgrade) droplet"),
-    BotCommand("poweron",   "Nyalakan droplet"),
-    BotCommand("poweroff",  "Matikan droplet"),
-    BotCommand("reboot",    "Reboot droplet"),
-    BotCommand("help",      "Tampilkan bantuan"),
+    # ── DigitalOcean — API Keys ────────────────────────────────────────────
+    BotCommand("setkey",         "DO: Tambah API key DigitalOcean"),
+    BotCommand("mykey",          "DO: Lihat semua API key tersimpan"),
+    BotCommand("usekey",         "DO: Ganti API key aktif"),
+    BotCommand("deletekey",      "DO: Hapus API key tersimpan"),
+    # ── DigitalOcean — Billing ────────────────────────────────────────────
+    BotCommand("balance",        "DO: Cek saldo akun DigitalOcean"),
+    BotCommand("redeem",         "DO: Redeem promo/kredit code"),
+    # ── DigitalOcean — Droplets ───────────────────────────────────────────
+    BotCommand("list",           "DO: Daftar semua droplet"),
+    BotCommand("info",           "DO: Detail droplet tertentu"),
+    BotCommand("create",         "DO: Buat droplet baru"),
+    BotCommand("destroy",        "DO: Hapus droplet"),
+    BotCommand("upgrade",        "DO: Resize (upgrade) droplet"),
+    BotCommand("poweron",        "DO: Nyalakan droplet"),
+    BotCommand("poweroff",       "DO: Matikan droplet"),
+    BotCommand("reboot",         "DO: Reboot droplet"),
+    # ── Paperspace — API Keys ─────────────────────────────────────────────
+    BotCommand("pskey",          "PS: Tambah API key Paperspace"),
+    BotCommand("mypsk",          "PS: Lihat semua Paperspace key"),
+    BotCommand("usepsk",         "PS: Ganti Paperspace key aktif"),
+    BotCommand("deletepsk",      "PS: Hapus Paperspace key"),
+    # ── Paperspace — Projects ─────────────────────────────────────────────
+    BotCommand("projects",       "PS: Daftar semua project"),
+    BotCommand("newproject",     "PS: Buat project baru"),
+    BotCommand("delproject",     "PS: Hapus project"),
+    # ── Paperspace — Notebooks ────────────────────────────────────────────
+    BotCommand("notebooks",      "PS: Daftar semua notebook"),
+    BotCommand("newnotebook",    "PS: Buat notebook baru"),
+    BotCommand("stopnotebook",   "PS: Hentikan notebook"),
+    BotCommand("delnotebook",    "PS: Hapus notebook"),
+    # ── General ───────────────────────────────────────────────────────────
+    BotCommand("help",           "Tampilkan bantuan"),
 ]
 
 
@@ -69,7 +100,12 @@ def main() -> None:
     )
 
     # Register handlers — order matters for ConversationHandlers
-    for module in (start, list_handler, info, power, create, destroy, upgrade, setkey, billing):
+    for module in (
+        # DigitalOcean
+        start, list_handler, info, power, create, destroy, upgrade, setkey, billing,
+        # Paperspace
+        ps_setkey, ps_projects, ps_notebooks,
+    ):
         for handler in module.get_handlers():
             app.add_handler(handler)
 
