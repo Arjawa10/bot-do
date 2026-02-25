@@ -29,9 +29,10 @@ class BrowserHandler:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-software-rasterizer")
-            chrome_options.add_argument("--single-process")
-            chrome_options.add_argument("--remote-debugging-pipe")
+            chrome_options.add_argument("--disable-background-networking")
+            chrome_options.add_argument("--disable-default-apps")
             chrome_options.add_argument("--window-size=1920,1080")
+            chrome_options.add_argument("--disable-setuid-sandbox")
 
             # Heroku sets GOOGLE_CHROME_BIN / GOOGLE_CHROME_SHIM and CHROMEDRIVER_PATH
             chrome_bin = os.environ.get("GOOGLE_CHROME_SHIM") or os.environ.get("GOOGLE_CHROME_BIN")
@@ -39,8 +40,10 @@ class BrowserHandler:
 
             if chrome_bin:
                 chrome_options.binary_location = chrome_bin
+                print(f"[BROWSER] Using Chrome binary: {chrome_bin}")
 
             if chromedriver_path:
+                print(f"[BROWSER] Using ChromeDriver: {chromedriver_path}")
                 service = Service(executable_path=chromedriver_path)
                 self._driver = await asyncio.to_thread(
                     lambda: webdriver.Chrome(service=service, options=chrome_options)
@@ -76,16 +79,21 @@ class BrowserHandler:
 
             # Navigate to login page
             await asyncio.to_thread(driver.get, LOGIN_URL)
+            await asyncio.sleep(3)
             print(f"[LOGIN] Navigated to {LOGIN_URL}")
+            print(f"[LOGIN] Page title: {driver.title}")
+            print(f"[LOGIN] Current URL: {driver.current_url}")
 
-            wait = WebDriverWait(driver, 15)
+            wait = WebDriverWait(driver, 20)
 
             # Fill email
             email_field = await asyncio.to_thread(
-                wait.until, EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email']"))
+                wait.until, EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email'], input[id='email']"))
             )
+            await asyncio.sleep(1)
             await asyncio.to_thread(email_field.clear)
             await asyncio.to_thread(email_field.send_keys, email)
+            print(f"[LOGIN] Email entered.")
 
             # Fill password
             password_field = await asyncio.to_thread(
