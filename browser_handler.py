@@ -23,15 +23,19 @@ class BrowserHandler:
         """Launch a headless Chrome browser instance."""
         try:
             chrome_options = Options()
-            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--headless=new")
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-software-rasterizer")
+            chrome_options.add_argument("--single-process")
+            chrome_options.add_argument("--remote-debugging-pipe")
             chrome_options.add_argument("--window-size=1920,1080")
 
-            # Heroku sets GOOGLE_CHROME_BIN and CHROMEDRIVER_PATH
-            chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", None)
-            chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", None)
+            # Heroku sets GOOGLE_CHROME_BIN / GOOGLE_CHROME_SHIM and CHROMEDRIVER_PATH
+            chrome_bin = os.environ.get("GOOGLE_CHROME_SHIM") or os.environ.get("GOOGLE_CHROME_BIN")
+            chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
             if chrome_bin:
                 chrome_options.binary_location = chrome_bin
