@@ -19,7 +19,7 @@ class BrowserHandler:
         """Launch a Chromium browser instance (headed)."""
         try:
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(headless=False)
+            self._browser = await self._playwright.chromium.launch(headless=True)
             context = await self._browser.new_context()
             self._page = await context.new_page()
             print("[BROWSER] Browser launched successfully.")
