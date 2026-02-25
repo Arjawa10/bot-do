@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+echo "-----> Installing Playwright Chromium browser..."
+playwright install --with-deps chromium
+echo "-----> Playwright Chromium installed!"
