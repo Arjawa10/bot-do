@@ -1,27 +1,51 @@
 import asyncio
+import os
 from datetime import datetime
-from playwright.async_api import async_playwright, Browser, Page, Playwright
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from config import GPU_PAGE_URL, LOGIN_URL, OUT_OF_STOCK_TEXT
 
 
 class BrowserHandler:
-    """Handles all Playwright browser automation for DigitalOcean AMD GPU checking."""
+    """Handles all Selenium browser automation for DigitalOcean AMD GPU checking."""
 
     def __init__(self):
-        self._playwright: Playwright | None = None
-        self._browser: Browser | None = None
-        self._page: Page | None = None
+        self._driver: webdriver.Chrome | None = None
 
     # ------------------------------------------------------------------
     # 1. Start Browser
     # ------------------------------------------------------------------
     async def start_browser(self) -> str:
-        """Launch a Chromium browser instance (headed)."""
+        """Launch a headless Chrome browser instance."""
         try:
-            self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(headless=True)
-            context = await self._browser.new_context()
-            self._page = await context.new_page()
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--window-size=1920,1080")
+
+            # Heroku sets GOOGLE_CHROME_BIN and CHROMEDRIVER_PATH
+            chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", None)
+            chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", None)
+
+            if chrome_bin:
+                chrome_options.binary_location = chrome_bin
+
+            if chromedriver_path:
+                service = Service(executable_path=chromedriver_path)
+                self._driver = await asyncio.to_thread(
+                    lambda: webdriver.Chrome(service=service, options=chrome_options)
+                )
+            else:
+                self._driver = await asyncio.to_thread(
+                    lambda: webdriver.Chrome(options=chrome_options)
+                )
+
             print("[BROWSER] Browser launched successfully.")
             return "Browser started successfully."
         except Exception as e:
@@ -41,50 +65,65 @@ class BrowserHandler:
             "LOGIN_FAILED: <reason>" – on failure
         """
         try:
-            if self._page is None:
+            if self._driver is None:
                 return "LOGIN_FAILED: Browser not started. Call start_browser() first."
 
-            page = self._page
+            driver = self._driver
 
             # Navigate to login page
-            await page.goto(LOGIN_URL, wait_until="networkidle")
+            await asyncio.to_thread(driver.get, LOGIN_URL)
             print(f"[LOGIN] Navigated to {LOGIN_URL}")
 
+            wait = WebDriverWait(driver, 15)
+
             # Fill email
-            email_field = page.get_by_label("Email")
-            await email_field.wait_for(state="visible", timeout=15000)
-            await email_field.fill(email)
+            email_field = await asyncio.to_thread(
+                wait.until, EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email']"))
+            )
+            await asyncio.to_thread(email_field.clear)
+            await asyncio.to_thread(email_field.send_keys, email)
 
             # Fill password
-            password_field = page.get_by_label("Password")
-            await password_field.fill(password)
+            password_field = await asyncio.to_thread(
+                wait.until, EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='password'], input[name='password']"))
+            )
+            await asyncio.to_thread(password_field.clear)
+            await asyncio.to_thread(password_field.send_keys, password)
 
             # Click login / submit button
-            submit_btn = page.get_by_role("button", name="Log In")
-            await submit_btn.click()
+            submit_btn = await asyncio.to_thread(
+                wait.until, EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+            )
+            await asyncio.to_thread(submit_btn.click)
             print("[LOGIN] Credentials submitted, waiting for response...")
 
-            # Wait for either OTP field or successful navigation
+            # Wait a moment for page to react
+            await asyncio.sleep(5)
+
+            # Check if OTP field appeared
             try:
-                # Wait up to 15 s for either OTP input or URL change indicating success
-                otp_locator = page.locator("input[name='otp'], input[type='tel'], input[name='code']")
-                await otp_locator.first.wait_for(state="visible", timeout=15000)
+                otp_field = await asyncio.to_thread(
+                    lambda: WebDriverWait(driver, 10).until(
+                        EC.visibility_of_element_located(
+                            (By.CSS_SELECTOR, "input[name='otp'], input[type='tel'], input[name='code']")
+                        )
+                    )
+                )
                 print("[LOGIN] OTP field detected.")
                 return "OTP_REQUIRED"
             except Exception:
-                # OTP field did not appear — check if we're logged in
-                await page.wait_for_load_state("networkidle")
-                current_url = page.url
+                # No OTP field — check if we're logged in
+                current_url = driver.current_url
                 if "login" not in current_url.lower():
                     print("[LOGIN] Login successful (no OTP).")
                     return "LOGIN_SUCCESS"
                 else:
                     # Still on login page — look for error messages
-                    error_el = page.locator(".error, .alert-danger, [role='alert']")
-                    if await error_el.count() > 0:
-                        err_text = await error_el.first.inner_text()
-                        return f"LOGIN_FAILED: {err_text}"
-                    return "LOGIN_FAILED: Unknown error — still on login page."
+                    try:
+                        error_el = driver.find_element(By.CSS_SELECTOR, ".error, .alert-danger, [role='alert']")
+                        return f"LOGIN_FAILED: {error_el.text}"
+                    except Exception:
+                        return "LOGIN_FAILED: Unknown error — still on login page."
 
         except Exception as e:
             error_msg = f"LOGIN_FAILED: {e}"
@@ -102,36 +141,43 @@ class BrowserHandler:
             "OTP_FAILED: <reason>" – on failure
         """
         try:
-            if self._page is None:
+            if self._driver is None:
                 return "OTP_FAILED: Browser not started."
 
-            page = self._page
+            driver = self._driver
+            wait = WebDriverWait(driver, 10)
 
             # Find and fill OTP field
-            otp_field = page.locator("input[name='otp'], input[type='tel'], input[name='code']")
-            await otp_field.first.wait_for(state="visible", timeout=10000)
-            await otp_field.first.fill(otp_code)
+            otp_field = await asyncio.to_thread(
+                wait.until, EC.visibility_of_element_located(
+                    (By.CSS_SELECTOR, "input[name='otp'], input[type='tel'], input[name='code']")
+                )
+            )
+            await asyncio.to_thread(otp_field.clear)
+            await asyncio.to_thread(otp_field.send_keys, otp_code)
 
             # Click submit / verify button
-            verify_btn = page.get_by_role("button", name="Verify")
-            if await verify_btn.count() == 0:
-                # Fallback: try any submit button
-                verify_btn = page.locator("button[type='submit']")
-            await verify_btn.first.click()
+            try:
+                verify_btn = await asyncio.to_thread(
+                    wait.until, EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+                )
+                await asyncio.to_thread(verify_btn.click)
+            except Exception:
+                pass
 
             print("[OTP] OTP submitted, waiting for navigation...")
-            await page.wait_for_load_state("networkidle")
+            await asyncio.sleep(5)
 
-            current_url = page.url
+            current_url = driver.current_url
             if "login" not in current_url.lower():
                 print("[OTP] Login successful after OTP.")
                 return "LOGIN_SUCCESS"
             else:
-                error_el = page.locator(".error, .alert-danger, [role='alert']")
-                if await error_el.count() > 0:
-                    err_text = await error_el.first.inner_text()
-                    return f"OTP_FAILED: {err_text}"
-                return "OTP_FAILED: Unknown error — still on login page."
+                try:
+                    error_el = driver.find_element(By.CSS_SELECTOR, ".error, .alert-danger, [role='alert']")
+                    return f"OTP_FAILED: {error_el.text}"
+                except Exception:
+                    return "OTP_FAILED: Unknown error — still on login page."
 
         except Exception as e:
             error_msg = f"OTP_FAILED: {e}"
@@ -149,7 +195,7 @@ class BrowserHandler:
         timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
         try:
-            if self._page is None:
+            if self._driver is None:
                 return {
                     "available": False,
                     "message": "Browser not started.",
@@ -157,39 +203,32 @@ class BrowserHandler:
                     "current_url": "",
                 }
 
-            page = self._page
+            driver = self._driver
 
-            # Navigate to GPU listing page (same tab)
-            await page.goto(GPU_PAGE_URL, wait_until="networkidle")
+            # Navigate to GPU listing page
+            await asyncio.to_thread(driver.get, GPU_PAGE_URL)
             print(f"[GPU CHECK] Navigated to {GPU_PAGE_URL}")
+            await asyncio.sleep(3)
 
-            # Click "Create a GPU Droplet" button
-            create_btn = page.get_by_role("button", name="Create a GPU Droplet")
+            # Try to click "Create a GPU Droplet" button
             try:
-                await create_btn.wait_for(state="visible", timeout=15000)
-                await create_btn.click()
+                wait = WebDriverWait(driver, 15)
+                create_btn = await asyncio.to_thread(
+                    wait.until, EC.element_to_be_clickable(
+                        (By.XPATH, "//button[contains(text(), 'Create a GPU Droplet')] | //a[contains(text(), 'Create a GPU Droplet')]")
+                    )
+                )
+                await asyncio.to_thread(create_btn.click)
                 print("[GPU CHECK] Clicked 'Create a GPU Droplet' button.")
+                await asyncio.sleep(3)
             except Exception:
-                # Button might be a link instead
-                create_link = page.get_by_role("link", name="Create a GPU Droplet")
-                try:
-                    await create_link.wait_for(state="visible", timeout=5000)
-                    await create_link.click()
-                    print("[GPU CHECK] Clicked 'Create a GPU Droplet' link.")
-                except Exception:
-                    print("[GPU CHECK] 'Create a GPU Droplet' element not found, continuing check...")
-
-            # Wait for content to load
-            await page.wait_for_load_state("networkidle")
-            await asyncio.sleep(2)  # small extra wait for dynamic content
+                print("[GPU CHECK] 'Create a GPU Droplet' element not found, continuing check...")
 
             # Check for out-of-stock text
-            out_of_stock = page.get_by_text(OUT_OF_STOCK_TEXT)
-            is_out_of_stock = await out_of_stock.count() > 0
+            page_source = driver.page_source
+            current_url = driver.current_url
 
-            current_url = page.url
-
-            if is_out_of_stock:
+            if OUT_OF_STOCK_TEXT in page_source:
                 return {
                     "available": False,
                     "message": OUT_OF_STOCK_TEXT,
@@ -220,13 +259,9 @@ class BrowserHandler:
     async def close_browser(self) -> None:
         """Shut down the browser and release all resources."""
         try:
-            if self._browser:
-                await self._browser.close()
-                self._browser = None
-                self._page = None
-            if self._playwright:
-                await self._playwright.stop()
-                self._playwright = None
+            if self._driver:
+                await asyncio.to_thread(self._driver.quit)
+                self._driver = None
             print("[BROWSER] Browser closed.")
         except Exception as e:
             print(f"[BROWSER ERROR] Failed to close browser: {e}")
