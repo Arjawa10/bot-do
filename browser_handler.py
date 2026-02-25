@@ -29,10 +29,14 @@ class BrowserHandler:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-software-rasterizer")
-            chrome_options.add_argument("--disable-background-networking")
-            chrome_options.add_argument("--disable-default-apps")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--window-size=1920,1080")
+
+            # Anti-detection: look like a real browser
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option("useAutomationExtension", False)
 
             # Heroku sets GOOGLE_CHROME_BIN / GOOGLE_CHROME_SHIM and CHROMEDRIVER_PATH
             chrome_bin = os.environ.get("GOOGLE_CHROME_SHIM") or os.environ.get("GOOGLE_CHROME_BIN")
@@ -52,6 +56,13 @@ class BrowserHandler:
                 self._driver = await asyncio.to_thread(
                     lambda: webdriver.Chrome(options=chrome_options)
                 )
+
+            # Remove navigator.webdriver flag
+            await asyncio.to_thread(
+                self._driver.execute_cdp_cmd,
+                "Page.addScriptToEvaluateOnNewDocument",
+                {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"},
+            )
 
             print("[BROWSER] Browser launched successfully.")
             return "Browser started successfully."
