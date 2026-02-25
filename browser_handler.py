@@ -112,22 +112,41 @@ class BrowserHandler:
             # Wait for page to react (URL stays the same, content changes dynamically)
             await asyncio.sleep(5)
 
+            # DEBUG: dump page info
+            current_url = driver.current_url
+            page_source = driver.page_source
+            print(f"[LOGIN DEBUG] Current URL: {current_url}")
+            print(f"[LOGIN DEBUG] Page title: {driver.title}")
+
+            # Check page body text for clues
+            try:
+                body_text = driver.find_element(By.TAG_NAME, "body").text
+                print(f"[LOGIN DEBUG] Page body text (first 500 chars):")
+                print(body_text[:500])
+            except Exception:
+                print("[LOGIN DEBUG] Could not read body text")
+
+            # Check for common blocking indicators
+            if "captcha" in page_source.lower() or "recaptcha" in page_source.lower():
+                print("[LOGIN DEBUG] CAPTCHA detected on page!")
+            if "challenge" in page_source.lower():
+                print("[LOGIN DEBUG] Challenge detected on page!")
+            if "blocked" in page_source.lower():
+                print("[LOGIN DEBUG] Blocked indicator detected!")
+            if "too many" in page_source.lower():
+                print("[LOGIN DEBUG] Rate limit indicator detected!")
+
             # Check if OTP/verification field appeared (id="code")
             try:
                 otp_field = await asyncio.to_thread(
-                    lambda: WebDriverWait(driver, 15).until(
+                    lambda: WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((By.ID, "code"))
                     )
                 )
                 print("[LOGIN] OTP/verification code field detected (id=code).")
                 return "OTP_REQUIRED"
             except Exception:
-                pass
-
-            # Check if we navigated away from login (success)
-            current_url = driver.current_url
-            page_source = driver.page_source
-            print(f"[LOGIN] Current URL after login attempt: {current_url}")
+                print("[LOGIN DEBUG] OTP field (id=code) not found.")
 
             # Check for success indicators (redirects to /projects/ after login)
             if "projects" in current_url.lower() or "dashboard" in current_url.lower() or "gpus" in current_url.lower():
