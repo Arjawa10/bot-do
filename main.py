@@ -63,7 +63,14 @@ async def receive_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Membuka browser dan melakukan login...")
 
     # Start browser & login
-    await browser_handler.start_browser()
+    browser_result = await browser_handler.start_browser()
+    if "Failed" in browser_result:
+        await update.message.reply_text(
+            f"❌ Gagal membuka browser.\n`{browser_result}`",
+            parse_mode="Markdown",
+        )
+        return ConversationHandler.END
+
     result = await browser_handler.login(email, password)
 
     if result == "OTP_REQUIRED":
