@@ -31,8 +31,8 @@ class BrowserHandler:
             chrome_options.add_argument("--disable-software-rasterizer")
             chrome_options.add_argument("--disable-background-networking")
             chrome_options.add_argument("--disable-default-apps")
-            chrome_options.add_argument("--window-size=1920,1080")
             chrome_options.add_argument("--disable-setuid-sandbox")
+            chrome_options.add_argument("--window-size=1920,1080")
 
             # Heroku sets GOOGLE_CHROME_BIN / GOOGLE_CHROME_SHIM and CHROMEDRIVER_PATH
             chrome_bin = os.environ.get("GOOGLE_CHROME_SHIM") or os.environ.get("GOOGLE_CHROME_BIN")
@@ -82,60 +82,74 @@ class BrowserHandler:
             await asyncio.sleep(3)
             print(f"[LOGIN] Navigated to {LOGIN_URL}")
             print(f"[LOGIN] Page title: {driver.title}")
-            print(f"[LOGIN] Current URL: {driver.current_url}")
 
             wait = WebDriverWait(driver, 20)
 
-            # Fill email
+            # Fill email (id="email")
             email_field = await asyncio.to_thread(
-                wait.until, EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email'], input[id='email']"))
+                wait.until, EC.presence_of_element_located((By.ID, "email"))
             )
             await asyncio.sleep(1)
             await asyncio.to_thread(email_field.clear)
             await asyncio.to_thread(email_field.send_keys, email)
-            print(f"[LOGIN] Email entered.")
+            print("[LOGIN] Email entered.")
 
-            # Fill password
+            # Fill password (id="password")
             password_field = await asyncio.to_thread(
-                wait.until, EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='password'], input[name='password']"))
+                wait.until, EC.presence_of_element_located((By.ID, "password"))
             )
             await asyncio.to_thread(password_field.clear)
             await asyncio.to_thread(password_field.send_keys, password)
+            print("[LOGIN] Password entered.")
 
-            # Click login / submit button
+            # Click "Log In" button
             submit_btn = await asyncio.to_thread(
                 wait.until, EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
             )
             await asyncio.to_thread(submit_btn.click)
-            print("[LOGIN] Credentials submitted, waiting for response...")
+            print("[LOGIN] Login button clicked, waiting for response...")
 
-            # Wait a moment for page to react
+            # Wait for page to react (URL stays the same, content changes dynamically)
             await asyncio.sleep(5)
 
-            # Check if OTP field appeared
+            # Check if OTP/verification field appeared (id="code")
             try:
                 otp_field = await asyncio.to_thread(
-                    lambda: WebDriverWait(driver, 10).until(
-                        EC.visibility_of_element_located(
-                            (By.CSS_SELECTOR, "input[name='otp'], input[type='tel'], input[name='code']")
-                        )
+                    lambda: WebDriverWait(driver, 15).until(
+                        EC.presence_of_element_located((By.ID, "code"))
                     )
                 )
-                print("[LOGIN] OTP field detected.")
+                print("[LOGIN] OTP/verification code field detected (id=code).")
                 return "OTP_REQUIRED"
             except Exception:
-                # No OTP field — check if we're logged in
-                current_url = driver.current_url
-                if "login" not in current_url.lower():
-                    print("[LOGIN] Login successful (no OTP).")
-                    return "LOGIN_SUCCESS"
-                else:
-                    # Still on login page — look for error messages
-                    try:
-                        error_el = driver.find_element(By.CSS_SELECTOR, ".error, .alert-danger, [role='alert']")
-                        return f"LOGIN_FAILED: {error_el.text}"
-                    except Exception:
-                        return "LOGIN_FAILED: Unknown error — still on login page."
+                pass
+
+            # Check if we navigated away from login (success)
+            current_url = driver.current_url
+            page_source = driver.page_source
+            print(f"[LOGIN] Current URL after login attempt: {current_url}")
+
+            # Check for success indicators
+            if "login" not in current_url.lower() or "dashboard" in current_url.lower() or "gpus" in current_url.lower():
+                print("[LOGIN] Login successful (no OTP).")
+                return "LOGIN_SUCCESS"
+
+            # Check for error messages on page
+            try:
+                error_el = driver.find_element(By.CSS_SELECTOR, ".error, .alert-danger, [role='alert'], .notice--error")
+                err_text = error_el.text
+                if err_text:
+                    print(f"[LOGIN] Error found: {err_text}")
+                    return f"LOGIN_FAILED: {err_text}"
+            except Exception:
+                pass
+
+            # Check for "Verify" text in page (alternative OTP detection)
+            if "verify" in page_source.lower() or "6-digit" in page_source.lower():
+                print("[LOGIN] Verification page detected via page content.")
+                return "OTP_REQUIRED"
+
+            return "LOGIN_FAILED: Unknown error — page did not change as expected."
 
         except Exception as e:
             error_msg = f"LOGIN_FAILED: {e}"
@@ -147,7 +161,7 @@ class BrowserHandler:
     # ------------------------------------------------------------------
     async def submit_otp(self, otp_code: str) -> str:
         """
-        Fill and submit the OTP code on the current page.
+        Fill and submit the OTP/verification code on the current page.
         Returns:
             "LOGIN_SUCCESS" – if OTP succeeds
             "OTP_FAILED: <reason>" – on failure
@@ -157,39 +171,64 @@ class BrowserHandler:
                 return "OTP_FAILED: Browser not started."
 
             driver = self._driver
-            wait = WebDriverWait(driver, 10)
+            wait = WebDriverWait(driver, 15)
 
-            # Find and fill OTP field
+            # Find and fill OTP field (id="code")
             otp_field = await asyncio.to_thread(
-                wait.until, EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, "input[name='otp'], input[type='tel'], input[name='code']")
-                )
+                wait.until, EC.presence_of_element_located((By.ID, "code"))
             )
             await asyncio.to_thread(otp_field.clear)
             await asyncio.to_thread(otp_field.send_keys, otp_code)
+            print(f"[OTP] Code entered.")
 
-            # Click submit / verify button
+            # Click "Verify Code" button
             try:
                 verify_btn = await asyncio.to_thread(
-                    wait.until, EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+                    wait.until, EC.element_to_be_clickable(
+                        (By.XPATH, "//button[contains(text(), 'Verify')]")
+                    )
                 )
                 await asyncio.to_thread(verify_btn.click)
+                print("[OTP] Verify button clicked.")
             except Exception:
-                pass
+                # Fallback: try any submit button
+                try:
+                    submit_btn = await asyncio.to_thread(
+                        wait.until, EC.element_to_be_clickable(
+                            (By.CSS_SELECTOR, "button[type='submit']")
+                        )
+                    )
+                    await asyncio.to_thread(submit_btn.click)
+                    print("[OTP] Submit button clicked (fallback).")
+                except Exception:
+                    pass
 
-            print("[OTP] OTP submitted, waiting for navigation...")
             await asyncio.sleep(5)
 
             current_url = driver.current_url
+            page_source = driver.page_source
+            print(f"[OTP] Current URL: {current_url}")
+
+            # Success if we left the login page or no more verify content
             if "login" not in current_url.lower():
                 print("[OTP] Login successful after OTP.")
                 return "LOGIN_SUCCESS"
-            else:
-                try:
-                    error_el = driver.find_element(By.CSS_SELECTOR, ".error, .alert-danger, [role='alert']")
-                    return f"OTP_FAILED: {error_el.text}"
-                except Exception:
-                    return "OTP_FAILED: Unknown error — still on login page."
+
+            # Still on login URL but maybe content changed
+            if "verify" not in page_source.lower() and "6-digit" not in page_source.lower():
+                print("[OTP] Login successful (verification screen gone).")
+                return "LOGIN_SUCCESS"
+
+            # Check for error
+            try:
+                error_el = driver.find_element(By.CSS_SELECTOR, ".error, .alert-danger, [role='alert'], .notice--error")
+                err_text = error_el.text
+                if err_text:
+                    return f"OTP_FAILED: {err_text}"
+            except Exception:
+                pass
+
+            return "OTP_FAILED: Unknown error — still on verification page."
 
         except Exception as e:
             error_msg = f"OTP_FAILED: {e}"
@@ -219,8 +258,9 @@ class BrowserHandler:
 
             # Navigate to GPU listing page
             await asyncio.to_thread(driver.get, GPU_PAGE_URL)
-            print(f"[GPU CHECK] Navigated to {GPU_PAGE_URL}")
             await asyncio.sleep(3)
+            print(f"[GPU CHECK] Navigated to {GPU_PAGE_URL}")
+            print(f"[GPU CHECK] Page title: {driver.title}")
 
             # Try to click "Create a GPU Droplet" button
             try:
@@ -231,10 +271,10 @@ class BrowserHandler:
                     )
                 )
                 await asyncio.to_thread(create_btn.click)
-                print("[GPU CHECK] Clicked 'Create a GPU Droplet' button.")
+                print("[GPU CHECK] Clicked 'Create a GPU Droplet'.")
                 await asyncio.sleep(3)
             except Exception:
-                print("[GPU CHECK] 'Create a GPU Droplet' element not found, continuing check...")
+                print("[GPU CHECK] 'Create a GPU Droplet' element not found, checking page content...")
 
             # Check for out-of-stock text
             page_source = driver.page_source
