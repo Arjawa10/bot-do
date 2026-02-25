@@ -147,13 +147,53 @@ async def monitor_gpu_job(context: ContextTypes.DEFAULT_TYPE):
         last_check_result = result
 
         if result["available"]:
+            # Notify user GPU is available
             message = (
                 f"✅ *[GPU TERSEDIA!]*\n"
                 f"🕐 {result['timestamp']}\n"
                 f"🔗 {result['current_url']}\n"
                 f"📝 {result['message']}\n\n"
-                f"🚨 AMD GPU DigitalOcean TERSEDIA! Segera buka dan buat droplet!"
+                f"🚀 *Membuat GPU Droplet otomatis...*"
             )
+            await context.bot.send_message(
+                chat_id=context.job.chat_id,
+                text=message,
+                parse_mode="Markdown",
+            )
+
+            # Auto-create GPU Droplet
+            create_result = await browser_handler.create_gpu_droplet()
+            print(f"[CREATE] Result: {create_result}")
+
+            if create_result.get("success"):
+                create_msg = (
+                    f"🎉 *GPU DROPLET BERHASIL DIBUAT!*\n\n"
+                    f"📦 Plan: MI300X (1 GPU)\n"
+                    f"🖼️ Image: PyTorch\n"
+                    f"🔑 SSH Key: All keys selected\n"
+                    f"🕐 {create_result['timestamp']}\n"
+                    f"🔗 {create_result.get('url', 'N/A')}\n\n"
+                    f"✅ Droplet sedang diproses. Cek dashboard untuk status."
+                )
+                # Stop monitoring since droplet is created
+                is_monitoring = False
+                for job in context.job_queue.get_jobs_by_name(f"gpu_monitor_{context.job.chat_id}"):
+                    job.schedule_removal()
+                print("[MONITOR] Monitoring stopped — droplet created.")
+            else:
+                create_msg = (
+                    f"⚠️ *GAGAL MEMBUAT DROPLET*\n\n"
+                    f"📝 {create_result['message']}\n"
+                    f"🕐 {create_result['timestamp']}\n\n"
+                    f"⏳ Akan coba lagi pada pengecekan berikutnya..."
+                )
+
+            await context.bot.send_message(
+                chat_id=context.job.chat_id,
+                text=create_msg,
+                parse_mode="Markdown",
+            )
+
         else:
             message = (
                 f"❌ *[GPU TIDAK TERSEDIA]*\n"
@@ -162,15 +202,15 @@ async def monitor_gpu_job(context: ContextTypes.DEFAULT_TYPE):
                 f"⏳ Pengecekan berikutnya dalam {CHECK_INTERVAL // 60} menit..."
             )
 
-        # Console log
-        print(f"[LOG] {result['timestamp']} | Available: {result['available']} | {result['message']}")
+            # Console log
+            print(f"[LOG] {result['timestamp']} | Available: {result['available']} | {result['message']}")
 
-        # Send to Telegram
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=message,
-            parse_mode="Markdown",
-        )
+            # Send to Telegram
+            await context.bot.send_message(
+                chat_id=context.job.chat_id,
+                text=message,
+                parse_mode="Markdown",
+            )
 
     except Exception as e:
         error_msg = f"⚠️ Error saat monitoring GPU:\n`{e}`"

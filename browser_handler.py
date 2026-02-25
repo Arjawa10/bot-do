@@ -322,7 +322,149 @@ class BrowserHandler:
             }
 
     # ------------------------------------------------------------------
-    # 5. Close Browser
+    # 5. Create GPU Droplet
+    # ------------------------------------------------------------------
+    async def create_gpu_droplet(self) -> dict:
+        """
+        Create a GPU Droplet with:
+        - Plan: MI300X (1 GPU)
+        - Image: PyTorch
+        - SSH Key: Select all available
+        Returns a dict with success status and message.
+        """
+        timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+
+        try:
+            if self._driver is None:
+                return {
+                    "success": False,
+                    "message": "Browser not started.",
+                    "timestamp": timestamp,
+                }
+
+            driver = self._driver
+
+            # Navigate to GPU creation page
+            await asyncio.to_thread(driver.get, GPU_PAGE_URL)
+            await asyncio.sleep(5)
+            print("[CREATE] Navigated to GPU creation page.")
+
+            # 1. Select MI300X (1 GPU) plan — input#size-325
+            try:
+                await asyncio.to_thread(
+                    driver.execute_script,
+                    """
+                    var el = document.getElementById('size-325');
+                    if (el) { el.click(); el.checked = true; }
+                    """
+                )
+                print("[CREATE] Selected MI300X (1 GPU) plan.")
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"[CREATE] Could not select GPU plan: {e}")
+
+            # 2. Select PyTorch image — input#image-201616009
+            try:
+                await asyncio.to_thread(
+                    driver.execute_script,
+                    """
+                    var el = document.getElementById('image-201616009');
+                    if (el) { el.click(); el.checked = true; }
+                    """
+                )
+                print("[CREATE] Selected PyTorch image.")
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"[CREATE] Could not select PyTorch image: {e}")
+
+            # 3. Select all SSH keys
+            try:
+                await asyncio.to_thread(
+                    driver.execute_script,
+                    """
+                    var el = document.getElementById('ssh-key-select-list-select-all');
+                    if (el && !el.checked) { el.click(); }
+                    """
+                )
+                print("[CREATE] Selected all SSH keys.")
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"[CREATE] Could not select SSH keys: {e}")
+
+            # 4. Click "Create GPU Droplet" button
+            try:
+                wait = WebDriverWait(driver, 10)
+                create_btn = await asyncio.to_thread(
+                    wait.until, EC.element_to_be_clickable(
+                        (By.XPATH, "//button[contains(text(), 'Create GPU Droplet')]")
+                    )
+                )
+                await asyncio.to_thread(create_btn.click)
+                print("[CREATE] Clicked 'Create GPU Droplet' button!")
+                await asyncio.sleep(10)
+            except Exception as e:
+                print(f"[CREATE] Button not clickable, trying JS click: {e}")
+                try:
+                    await asyncio.to_thread(
+                        driver.execute_script,
+                        """
+                        var buttons = document.querySelectorAll('button');
+                        for (var b of buttons) {
+                            if (b.textContent.includes('Create GPU Droplet')) {
+                                b.click();
+                                break;
+                            }
+                        }
+                        """
+                    )
+                    await asyncio.sleep(10)
+                except Exception:
+                    pass
+
+            # 5. Check result
+            current_url = driver.current_url
+            page_source = driver.page_source
+            print(f"[CREATE] Current URL after creation: {current_url}")
+
+            if "gpus/" in current_url and "new" not in current_url:
+                return {
+                    "success": True,
+                    "message": f"GPU Droplet created successfully!",
+                    "timestamp": timestamp,
+                    "url": current_url,
+                }
+            elif "Creating" in page_source or "created" in page_source.lower():
+                return {
+                    "success": True,
+                    "message": f"GPU Droplet creation initiated!",
+                    "timestamp": timestamp,
+                    "url": current_url,
+                }
+            else:
+                # Check for errors
+                body_text = ""
+                try:
+                    body_text = driver.find_element(By.TAG_NAME, "body").text[:300]
+                except Exception:
+                    pass
+                return {
+                    "success": False,
+                    "message": f"Creation may have failed. Page: {body_text[:200]}",
+                    "timestamp": timestamp,
+                    "url": current_url,
+                }
+
+        except Exception as e:
+            error_msg = f"Error creating GPU Droplet: {e}"
+            print(f"[CREATE ERROR] {error_msg}")
+            return {
+                "success": False,
+                "message": error_msg,
+                "timestamp": timestamp,
+            }
+
+    # ------------------------------------------------------------------
+    # 6. Close Browser
     # ------------------------------------------------------------------
     async def close_browser(self) -> None:
         """Shut down the browser and release all resources."""
@@ -333,3 +475,4 @@ class BrowserHandler:
             print("[BROWSER] Browser closed.")
         except Exception as e:
             print(f"[BROWSER ERROR] Failed to close browser: {e}")
+
