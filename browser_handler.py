@@ -129,8 +129,8 @@ class BrowserHandler:
             page_source = driver.page_source
             print(f"[LOGIN] Current URL after login attempt: {current_url}")
 
-            # Check for success indicators
-            if "login" not in current_url.lower() or "dashboard" in current_url.lower() or "gpus" in current_url.lower():
+            # Check for success indicators (redirects to /projects/ after login)
+            if "projects" in current_url.lower() or "dashboard" in current_url.lower() or "gpus" in current_url.lower():
                 print("[LOGIN] Login successful (no OTP).")
                 return "LOGIN_SUCCESS"
 
@@ -214,8 +214,8 @@ class BrowserHandler:
                 print("[OTP] Login successful after OTP.")
                 return "LOGIN_SUCCESS"
 
-            # Still on login URL but maybe content changed
-            if "verify" not in page_source.lower() and "6-digit" not in page_source.lower():
+            # Still on login URL but maybe content changed (redirected to /projects/)
+            if "projects" in current_url.lower() or ("verify" not in page_source.lower() and "6-digit" not in page_source.lower()):
                 print("[OTP] Login successful (verification screen gone).")
                 return "LOGIN_SUCCESS"
 
@@ -256,25 +256,11 @@ class BrowserHandler:
 
             driver = self._driver
 
-            # Navigate to GPU listing page
+            # Navigate directly to GPU creation page (/gpus/new)
             await asyncio.to_thread(driver.get, GPU_PAGE_URL)
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)
             print(f"[GPU CHECK] Navigated to {GPU_PAGE_URL}")
             print(f"[GPU CHECK] Page title: {driver.title}")
-
-            # Try to click "Create a GPU Droplet" button
-            try:
-                wait = WebDriverWait(driver, 15)
-                create_btn = await asyncio.to_thread(
-                    wait.until, EC.element_to_be_clickable(
-                        (By.XPATH, "//button[contains(text(), 'Create a GPU Droplet')] | //a[contains(text(), 'Create a GPU Droplet')]")
-                    )
-                )
-                await asyncio.to_thread(create_btn.click)
-                print("[GPU CHECK] Clicked 'Create a GPU Droplet'.")
-                await asyncio.sleep(3)
-            except Exception:
-                print("[GPU CHECK] 'Create a GPU Droplet' element not found, checking page content...")
 
             # Check for out-of-stock text
             page_source = driver.page_source

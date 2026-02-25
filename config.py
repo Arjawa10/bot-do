@@ -10,7 +10,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))
 
 # URL DigitalOcean AMD GPU
-GPU_PAGE_URL = "https://amd.digitalocean.com/gpus"
+GPU_PAGE_URL = "https://amd.digitalocean.com/gpus/new"
 LOGIN_URL = "https://amd.digitalocean.com/login"
 
 # Teks indikator GPU habis
