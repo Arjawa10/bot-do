@@ -166,20 +166,36 @@ async def monitor_gpu_job(context: ContextTypes.DEFAULT_TYPE):
             print(f"[CREATE] Result: {create_result}")
 
             if create_result.get("success"):
+                ip_addr = create_result.get("ip")
+                ip_line = f"🌐 *Public IPv4:* `{ip_addr}`\n" if ip_addr else "🌐 IPv4: masih menunggu...\n"
+
                 create_msg = (
                     f"🎉 *GPU DROPLET BERHASIL DIBUAT!*\n\n"
                     f"📦 Plan: MI300X (1 GPU)\n"
                     f"🖼️ Image: PyTorch\n"
                     f"🔑 SSH Key: All keys selected\n"
+                    f"{ip_line}"
                     f"🕐 {create_result['timestamp']}\n"
                     f"🔗 {create_result.get('url', 'N/A')}\n\n"
-                    f"✅ Droplet sedang diproses. Cek dashboard untuk status."
                 )
+
+                if ip_addr:
+                    create_msg += (
+                        f"✅ Droplet siap! Connect via:\n"
+                        f"`ssh root@{ip_addr}`"
+                    )
+                else:
+                    create_msg += "⏳ Droplet sedang dibuat, cek dashboard untuk IP."
+
                 # Stop monitoring since droplet is created
                 is_monitoring = False
                 for job in context.job_queue.get_jobs_by_name(f"gpu_monitor_{context.job.chat_id}"):
                     job.schedule_removal()
                 print("[MONITOR] Monitoring stopped — droplet created.")
+
+                # Close browser to free memory
+                await browser_handler.close_browser()
+                print("[BROWSER] Browser closed after droplet creation.")
             else:
                 create_msg = (
                     f"⚠️ *GAGAL MEMBUAT DROPLET*\n\n"

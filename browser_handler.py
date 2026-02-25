@@ -421,36 +421,83 @@ class BrowserHandler:
                 except Exception:
                     pass
 
-            # 5. Check result
+            # 5. Wait for page redirect and public IPv4
+            import re
+
             current_url = driver.current_url
-            page_source = driver.page_source
             print(f"[CREATE] Current URL after creation: {current_url}")
 
-            if "gpus/" in current_url and "new" not in current_url:
+            # Check if we were redirected to the droplet overview page
+            if "gpus/" not in current_url or "new" in current_url:
+                # Check if creation was even initiated
+                page_source = driver.page_source
+                if "Creating" not in page_source and "created" not in page_source.lower():
+                    body_text = ""
+                    try:
+                        body_text = driver.find_element(By.TAG_NAME, "body").text[:300]
+                    except Exception:
+                        pass
+                    return {
+                        "success": False,
+                        "message": f"Creation may have failed. Page: {body_text[:200]}",
+                        "timestamp": timestamp,
+                        "ip": None,
+                        "url": current_url,
+                    }
+
+            # We're on the overview page — poll for public IPv4
+            # Refresh every 30 seconds, max 10 attempts (5 minutes)
+            public_ip = None
+            max_attempts = 10
+
+            for attempt in range(1, max_attempts + 1):
+                print(f"[CREATE] Checking for public IPv4... attempt {attempt}/{max_attempts}")
+
+                page_source = driver.page_source
+
+                # Look for IPv4 pattern in page
+                # The "Public IPv4" section shows an IP like 134.199.199.133
+                ip_match = re.search(r"Public IPv4.*?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", page_source, re.DOTALL)
+                if ip_match:
+                    public_ip = ip_match.group(1)
+                    print(f"[CREATE] Found public IPv4: {public_ip}")
+                    break
+
+                # Also try to find IP from body text
+                try:
+                    body_text = driver.find_element(By.TAG_NAME, "body").text
+                    if "Public IPv4" in body_text:
+                        ip_match2 = re.search(r"Public IPv4\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", body_text)
+                        if ip_match2:
+                            public_ip = ip_match2.group(1)
+                            print(f"[CREATE] Found public IPv4 from body: {public_ip}")
+                            break
+                except Exception:
+                    pass
+
+                # Not found yet, wait and refresh
+                if attempt < max_attempts:
+                    print(f"[CREATE] IPv4 not found yet, refreshing in 30s...")
+                    await asyncio.sleep(30)
+                    await asyncio.to_thread(driver.refresh)
+                    await asyncio.sleep(5)
+
+            current_url = driver.current_url
+
+            if public_ip:
                 return {
                     "success": True,
-                    "message": f"GPU Droplet created successfully!",
+                    "message": "GPU Droplet created and ready!",
                     "timestamp": timestamp,
-                    "url": current_url,
-                }
-            elif "Creating" in page_source or "created" in page_source.lower():
-                return {
-                    "success": True,
-                    "message": f"GPU Droplet creation initiated!",
-                    "timestamp": timestamp,
+                    "ip": public_ip,
                     "url": current_url,
                 }
             else:
-                # Check for errors
-                body_text = ""
-                try:
-                    body_text = driver.find_element(By.TAG_NAME, "body").text[:300]
-                except Exception:
-                    pass
                 return {
-                    "success": False,
-                    "message": f"Creation may have failed. Page: {body_text[:200]}",
+                    "success": True,
+                    "message": "GPU Droplet created but IPv4 not detected within timeout.",
                     "timestamp": timestamp,
+                    "ip": None,
                     "url": current_url,
                 }
 
@@ -461,6 +508,7 @@ class BrowserHandler:
                 "success": False,
                 "message": error_msg,
                 "timestamp": timestamp,
+                "ip": None,
             }
 
     # ------------------------------------------------------------------
